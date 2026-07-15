@@ -1,0 +1,156 @@
+{
+  "id": "day-04",
+  "day": 4,
+  "title": "FFT & Spectral Analysis",
+  "subtitle": "Mastering discrete Fourier transforms, windowing, and power spectral density estimation in Python",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Understand DFT/FFT theory and numpy.fft conventions (fft, fftshift, fftfreq)",
+    "Apply window functions correctly and understand their trade-offs (scalloping loss, ENBW)",
+    "Estimate Power Spectral Density (PSD) using Welch's method (scipy.signal.welch)",
+    "Compute and interpret spectrograms/STFTs and handle spectral leakage",
+    "Convert between linear and logarithmic scales (dBFS, dBm/Hz) for real and complex signals"
+  ],
+  "sections": [
+    {
+      "heading": "DFT/FFT Theory and NumPy Conventions",
+      "content": "The Discrete Fourier Transform (DFT) converts a finite sequence of equally-spaced samples into a same-length sequence of equally-spaced samples of the discrete-time Fourier transform (DTFT). The Fast Fourier Transform (FFT) is an algorithm that computes the DFT efficiently. In Python, `numpy.fft` provides the core FFT routines. Unlike MATLAB, which returns 1-indexed arrays, NumPy is 0-indexed. The output of `np.fft.fft` places the zero-frequency (DC) component at index 0, followed by positive frequencies, and then negative frequencies. To visualize the spectrum with DC in the center, use `np.fft.fftshift`. The function `np.fft.fftfreq` is invaluable for generating the corresponding frequency axis, taking the number of points and the sample spacing (1/fs) as arguments. For real-valued signals, `np.fft.rfft` and `np.fft.rfftfreq` compute only the positive frequencies, saving computation and memory.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Signal parameters\nfs = 1000.0       # Sample rate (Hz)\nt = np.arange(0, 1.0, 1/fs) # 1 second duration\n\n# Create a signal: 50 Hz and 120 Hz sine waves\nx = 0.5 * np.sin(2 * np.pi * 50 * t) + np.sin(2 * np.pi * 120 * t)\n\n# Compute FFT\nN = len(x)\nX = np.fft.fft(x)\n\n# Generate frequency axis\nfreqs = np.fft.fftfreq(N, d=1/fs)\n\n# Shift zero frequency to center\nX_shifted = np.fft.fftshift(X)\nfreqs_shifted = np.fft.fftshift(freqs)\n\n# Plot magnitude spectrum\nplt.figure(figsize=(10, 4))\nplt.plot(freqs_shifted, np.abs(X_shifted) / N) # Normalize by N\nplt.title('Magnitude Spectrum (Centered)')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Magnitude')\nplt.grid(True)\nplt.xlim(-200, 200)\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "Basic FFT and Frequency Axis Generation",
+      "matlabComparison": "% MATLAB equivalent\nfs = 1000;\nt = 0:1/fs:1-1/fs;\nx = 0.5*sin(2*pi*50*t) + sin(2*pi*120*t);\nN = length(x);\nX = fft(x);\nfreqs = (-N/2:N/2-1)*(fs/N);\nX_shifted = fftshift(X);\nplot(freqs, abs(X_shifted)/N);"
+    },
+    {
+      "heading": "Normalization: Amplitude vs Power Spectra",
+      "content": "A common pitfall when computing FFTs is incorrect normalization. The raw output of `np.fft.fft` scales with the number of points N. To obtain the true amplitude of a sinusoid, you must divide the FFT output by N. For a two-sided spectrum, the amplitude of a real sinusoid will be split between positive and negative frequencies (each getting A/2). For a one-sided spectrum (using `rfft`), you multiply the non-DC components by 2 to recover the full amplitude. Power spectra represent the power of the signal. The power of a bin is proportional to the squared magnitude. Parseval's theorem states that the total energy in the time domain equals the total energy in the frequency domain. When computing power, remember to square the amplitude-normalized spectrum. If you are dealing with complex baseband (IQ) signals, the spectrum is inherently two-sided and asymmetric, so you do not multiply by 2.",
+      "code": "import numpy as np\n\nfs = 1000.0\nt = np.arange(0, 1.0, 1/fs)\nA = 2.0 # Amplitude\nx = A * np.cos(2 * np.pi * 100 * t)\nN = len(x)\n\n# Two-sided spectrum\nX = np.fft.fft(x)\nmag_two_sided = np.abs(X) / N\nprint(f\"Two-sided peak amplitude: {np.max(mag_two_sided):.2f}\") # Expected: 1.0 (A/2)\n\n# One-sided spectrum (for real signals)\nX_r = np.fft.rfft(x)\nmag_one_sided = np.abs(X_r) / N\n# Multiply non-DC and non-Nyquist bins by 2\nmag_one_sided[1:-1] *= 2\nprint(f\"One-sided peak amplitude: {np.max(mag_one_sided):.2f}\") # Expected: 2.0 (A)\n\n# Power calculation\npower_time = np.mean(x**2)\npower_freq = np.sum((np.abs(X)/N)**2)\nprint(f\"Time domain power: {power_time:.2f}\")\nprint(f\"Freq domain power: {power_freq:.2f}\")",
+      "codeTitle": "Amplitude Normalization and Parseval's Theorem",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Windowing and Spectral Leakage",
+      "content": "When a signal's frequency is not an integer multiple of the frequency resolution (fs/N), the energy leaks into adjacent bins. This is called spectral leakage. It occurs because the DFT assumes the finite signal is periodic, and non-integer cycles create discontinuities at the boundaries. To mitigate this, we multiply the time-domain signal by a window function before the FFT. A window tapers the signal to zero at the edges, smoothing the discontinuity. However, windowing broadens the main lobe (reducing frequency resolution) and reduces the total signal power. Common windows include Hann (good general purpose), Blackman-Harris (excellent sidelobe rejection for high dynamic range), and Kaiser (adjustable trade-off via the beta parameter). Two key metrics for windows are Scalloping Loss (maximum amplitude error for a tone exactly between bins) and Equivalent Noise Bandwidth (ENBW, the bandwidth of an ideal rectangular filter with the same noise power). When windowing, you must apply a coherent gain correction factor to recover the correct amplitude.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal.windows import hann, blackmanharris\n\nfs = 1000.0\nN = 1024\nt = np.arange(N) / fs\n# Tone at 100.5 Hz (between bins to cause leakage)\nx = np.cos(2 * np.pi * 100.5 * t)\n\n# Apply windows\nwin_rect = np.ones(N)\nwin_hann = hann(N)\nwin_bh = blackmanharris(N)\n\n# Coherent gain correction factors\ncg_rect = np.sum(win_rect) / N\ncg_hann = np.sum(win_hann) / N\ncg_bh = np.sum(win_bh) / N\n\n# Compute FFTs (normalized by N and coherent gain)\nX_rect = 20 * np.log10(np.abs(np.fft.rfft(x * win_rect)) / (N * cg_rect) + 1e-12)\nX_hann = 20 * np.log10(np.abs(np.fft.rfft(x * win_hann)) / (N * cg_hann) + 1e-12)\nX_bh = 20 * np.log10(np.abs(np.fft.rfft(x * win_bh)) / (N * cg_bh) + 1e-12)\n\nfreqs = np.fft.rfftfreq(N, 1/fs)\n\nplt.figure(figsize=(10, 4))\nplt.plot(freqs, X_rect, label='Rectangular')\nplt.plot(freqs, X_hann, label='Hann')\nplt.plot(freqs, X_bh, label='Blackman-Harris')\nplt.xlim(80, 120)\nplt.ylim(-100, 5)\nplt.ylabel('Magnitude (dB)')\nplt.legend()\nplt.grid(True)\n# plt.show()",
+      "codeTitle": "Comparing Window Functions and Leakage",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Zero-Padding vs Resolution",
+      "content": "Zero-padding involves appending zeros to the end of a time-domain signal before computing the FFT. A common misconception is that zero-padding increases frequency resolution (the ability to distinguish two closely spaced tones). It does not. The true frequency resolution is determined solely by the observation time (T = N/fs). Zero-padding increases the length of the FFT, which interpolates the spectrum, providing more frequency bins and a smoother-looking curve. This is useful for accurately locating the peak of a single tone (reducing scalloping loss) or for making plots look nicer, but it will not separate two tones that are closer than 1/T apart. In `np.fft.fft`, zero-padding is easily achieved by passing a length `n` greater than the signal length: `np.fft.fft(x, n=2048)`.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\nfs = 1000.0\nN = 256\nt = np.arange(N) / fs\n# Two closely spaced tones\nx = np.cos(2 * np.pi * 100 * t) + np.cos(2 * np.pi * 102 * t)\n\n# No zero-padding\nX_no_pad = np.abs(np.fft.rfft(x)) / N\nf_no_pad = np.fft.rfftfreq(N, 1/fs)\n\n# Zero-padding to 4096 points\nN_pad = 4096\nX_pad = np.abs(np.fft.rfft(x, n=N_pad)) / N\nf_pad = np.fft.rfftfreq(N_pad, 1/fs)\n\nplt.figure(figsize=(10, 4))\nplt.plot(f_pad, X_pad, label='Zero-padded (N=4096)')\nplt.plot(f_no_pad, X_no_pad, 'ro', label='No padding (N=256)')\nplt.xlim(90, 110)\nplt.title('Zero-Padding Interpolates, But Does Not Resolve')\nplt.xlabel('Frequency (Hz)')\nplt.legend()\nplt.grid(True)\n# plt.show()",
+      "codeTitle": "Effect of Zero-Padding on the Spectrum",
+      "matlabComparison": null
+    },
+    {
+      "heading": "PSD Estimation with Welch's Method",
+      "content": "For noisy signals, a single FFT provides a very noisy estimate of the spectrum (the periodogram). The variance of the periodogram does not decrease as you increase the number of samples N. To get a smooth estimate of the Power Spectral Density (PSD), we use Welch's method. Welch's method splits the signal into overlapping segments, applies a window to each segment, computes the periodogram of each, and averages them. This reduces the variance of the estimate at the cost of frequency resolution (since each segment is shorter than the full signal). In Python, use `scipy.signal.welch`. Key parameters are `nperseg` (segment length, controls resolution), `noverlap` (overlap between segments, typically 50%), and `window`. The output is the PSD, typically in units of V^2/Hz or W/Hz. To convert to dBm/Hz, use `10 * np.log10(Pxx * 1000 / R)`, where R is the impedance (often 50 ohms in RF).",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import welch\n\nfs = 1e6 # 1 MHz sample rate\nN = 100000\nt = np.arange(N) / fs\n\n# Signal: Tone at 200 kHz + White Gaussian Noise\nnoise_power = 1e-3 # V^2\nnoise = np.sqrt(noise_power) * np.random.randn(N)\nsignal = 0.1 * np.cos(2 * np.pi * 200e3 * t)\nx = signal + noise\n\n# Compute PSD using Welch's method\n# nperseg=1024 gives resolution of fs/1024 ~= 976 Hz\nf, Pxx = welch(x, fs, window='hann', nperseg=1024, noverlap=512)\n\n# Convert to dBV/Hz (10*log10 since Pxx is power)\nPxx_dBV_Hz = 10 * np.log10(Pxx)\n\nplt.figure(figsize=(10, 4))\nplt.semilogx(f, Pxx_dBV_Hz)\nplt.title(\"Welch's PSD Estimate\")\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('PSD (dBV/Hz)')\nplt.grid(True)\n# plt.show()",
+      "codeTitle": "Welch's Method for PSD Estimation",
+      "matlabComparison": "% MATLAB equivalent\nfs = 1e6;\nN = 100000;\nt = (0:N-1)/fs;\nnoise = sqrt(1e-3) * randn(1, N);\nsignal = 0.1 * cos(2*pi*200e3*t);\nx = signal + noise;\n[Pxx, f] = pwelch(x, hann(1024), 512, 1024, fs);\nsemilogx(f, 10*log10(Pxx));"
+    },
+    {
+      "heading": "Spectrograms and STFT",
+      "content": "When a signal's frequency content changes over time (non-stationary signals), a single PSD or FFT is insufficient. The Short-Time Fourier Transform (STFT) computes the FFT of overlapping segments of the signal, preserving time information. The squared magnitude of the STFT is the spectrogram. In Python, `scipy.signal.stft` returns the complex STFT, while `scipy.signal.spectrogram` returns the power spectrogram directly. The trade-off here is the fundamental uncertainty principle of signal processing: a longer segment (larger `nperseg`) gives better frequency resolution but worse time resolution, and vice versa. For RF signals, spectrograms are essential for analyzing frequency-hopping spread spectrum (FHSS), radar chirps, or transient interference.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import spectrogram\nfrom scipy.signal import chirp\n\nfs = 10000.0\nt = np.arange(0, 2.0, 1/fs)\n# Create a chirp signal sweeping from 100 Hz to 4000 Hz\nx = chirp(t, f0=100, t1=2.0, f1=4000, method='linear')\n\n# Compute spectrogram\n# nperseg=256 gives time res = 25.6ms, freq res = 39 Hz\nf, t_spec, Sxx = spectrogram(x, fs, window='hann', nperseg=256, noverlap=128)\n\n# Plot in dB\nplt.figure(figsize=(10, 4))\nplt.pcolormesh(t_spec, f, 10 * np.log10(Sxx), shading='gouraud', cmap='viridis')\nplt.title('Spectrogram of a Linear Chirp')\nplt.ylabel('Frequency (Hz)')\nplt.xlabel('Time (sec)')\nplt.colorbar(label='Power (dB)')\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "Computing and Plotting a Spectrogram",
+      "matlabComparison": null
+    },
+    {
+      "heading": "dB Scales and SNR Estimation",
+      "content": "In RF and wireless systems, power is almost always expressed in decibels (dB). Absolute power is often referenced to 1 milliwatt (dBm) or full scale (dBFS). To convert a voltage V to dBm in a 50-ohm system: P(dBm) = 10 * log10((V_rms^2 / 50) * 1000). When estimating Signal-to-Noise Ratio (SNR) from a PSD, you must integrate the power over the relevant bandwidths. The signal power is the integral of the PSD over the signal bandwidth, and the noise power is the integral of the PSD over the noise bandwidth. If you are using Welch's method, `Pxx` is a density (Power/Hz). To get total power in a band, you sum `Pxx` and multiply by the frequency bin width (`df = fs/nperseg`). Alternatively, if you just want the peak SNR of a tone, you can compare the peak bin power to the average noise floor bin power, but remember to account for the ENBW of the window used.",
+      "code": "import numpy as np\nfrom scipy.signal import welch\n\nfs = 1e6\nN = 100000\nt = np.arange(N) / fs\n\n# Signal: 100 kHz tone, amplitude 0.5V (peak)\n# Noise: AWGN, variance 0.01 V^2\nA = 0.5\nnoise_var = 0.01\nx = A * np.cos(2 * np.pi * 100e3 * t) + np.sqrt(noise_var) * np.random.randn(N)\n\n# True SNR calculation\nsig_power_true = (A**2) / 2\nsnr_true_db = 10 * np.log10(sig_power_true / noise_var)\n\n# Estimate SNR from PSD\nnperseg = 1024\nf, Pxx = welch(x, fs, window='hann', nperseg=nperseg)\ndf = f[1] - f[0]\n\n# Find signal peak\nsig_idx = np.argmax(Pxx)\n# Integrate power around peak (e.g., +/- 3 bins)\nsig_power_est = np.sum(Pxx[sig_idx-3:sig_idx+4]) * df\n\n# Estimate noise power from the rest of the spectrum\nnoise_mask = np.ones(len(Pxx), dtype=bool)\nnoise_mask[sig_idx-10:sig_idx+11] = False # Exclude signal region\nnoise_density_est = np.mean(Pxx[noise_mask])\nnoise_power_est = noise_density_est * (fs/2) # Total noise power in Nyquist band\n\nsnr_est_db = 10 * np.log10(sig_power_est / noise_power_est)\n\nprint(f\"True SNR: {snr_true_db:.2f} dB\")\nprint(f\"Estimated SNR: {snr_est_db:.2f} dB\")",
+      "codeTitle": "Estimating SNR from PSD",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Basic FFT and Windowing",
+      "prompt": "Generate a 1-second signal sampled at 2000 Hz containing two sine waves: one at 50 Hz with amplitude 1.0, and one at 50.5 Hz with amplitude 0.1. Compute the FFT without a window and plot the magnitude spectrum (in dB). Then, apply a Blackman-Harris window, compute the FFT, and plot it on the same graph. Observe how the window affects your ability to see the smaller tone.",
+      "hint": "Use `scipy.signal.windows.blackmanharris`. Remember to normalize the FFT by N, and apply the coherent gain correction for the windowed signal before converting to dB.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal.windows import blackmanharris\n\nfs = 2000.0\nN = int(fs * 1.0)\nt = np.arange(N) / fs\n\nx = 1.0 * np.cos(2 * np.pi * 50 * t) + 0.1 * np.cos(2 * np.pi * 50.5 * t)\n\n# No window\nX_rect = np.fft.rfft(x)\nmag_rect_db = 20 * np.log10(np.abs(X_rect) / N + 1e-12)\n\n# Blackman-Harris window\nwin = blackmanharris(N)\ncg = np.sum(win) / N\nX_bh = np.fft.rfft(x * win)\nmag_bh_db = 20 * np.log10(np.abs(X_bh) / (N * cg) + 1e-12)\n\nfreqs = np.fft.rfftfreq(N, 1/fs)\n\nplt.figure(figsize=(10, 4))\nplt.plot(freqs, mag_rect_db, label='Rectangular')\nplt.plot(freqs, mag_bh_db, label='Blackman-Harris')\nplt.xlim(45, 55)\nplt.ylim(-80, 5)\nplt.ylabel('Magnitude (dB)')\nplt.xlabel('Frequency (Hz)')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "explanation": "Without a window, the spectral leakage from the large 50 Hz tone completely masks the smaller 50.5 Hz tone. The rectangular window has high sidelobes. The Blackman-Harris window has very low sidelobes, allowing the smaller tone to be visible, although the main lobe is wider."
+    },
+    {
+      "title": "Exercise 2: Welch's Method for PSD",
+      "prompt": "Create a complex baseband signal sampled at 10 MHz for 0.1 seconds. The signal should contain complex white Gaussian noise with a variance of 2.0, and a complex tone at +2 MHz with an amplitude of 0.5. Use `scipy.signal.welch` to estimate the PSD. Ensure you use `return_onesided=False` since it's a complex signal. Plot the PSD in dBm/Hz assuming a 50-ohm system.",
+      "hint": "For complex noise, variance is split between real and imaginary parts: `np.sqrt(var/2) * (randn + j*randn)`. To convert PSD (V^2/Hz) to dBm/Hz, use `10 * log10(PSD * 1000 / 50)`.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import welch\n\nfs = 10e6\nN = int(fs * 0.1)\nt = np.arange(N) / fs\n\n# Complex tone at +2 MHz\ntone = 0.5 * np.exp(1j * 2 * np.pi * 2e6 * t)\n\n# Complex AWGN, variance = 2.0\nnoise = np.sqrt(2.0 / 2) * (np.random.randn(N) + 1j * np.random.randn(N))\n\nx = tone + noise\n\n# Welch's method for complex signal\nf, Pxx = welch(x, fs, window='hann', nperseg=2048, return_onesided=False)\n\n# Shift frequencies for plotting\nf_shifted = np.fft.fftshift(f)\nPxx_shifted = np.fft.fftshift(Pxx)\n\n# Convert to dBm/Hz (50 ohms)\nPxx_dBm_Hz = 10 * np.log10(Pxx_shifted * 1000 / 50)\n\nplt.figure(figsize=(10, 4))\nplt.plot(f_shifted / 1e6, Pxx_dBm_Hz)\nplt.title('PSD of Complex Signal')\nplt.xlabel('Frequency (MHz)')\nplt.ylabel('PSD (dBm/Hz)')\nplt.grid(True)\nplt.show()",
+      "explanation": "For complex signals, the spectrum is asymmetric, so we must compute a two-sided PSD (`return_onesided=False`). We use `fftshift` to center the zero frequency. The conversion to dBm/Hz requires scaling the power by 1000/50 before taking the 10*log10."
+    },
+    {
+      "title": "Exercise 3: Spectrogram of a Frequency-Hopping Signal",
+      "prompt": "Simulate a simple Frequency-Hopping Spread Spectrum (FHSS) signal. The sample rate is 100 kHz, duration 1 second. The signal hops between 4 frequencies: 10 kHz, 20 kHz, 30 kHz, and 40 kHz, changing every 0.25 seconds. Add some light noise. Compute and plot the spectrogram using `scipy.signal.spectrogram`. Choose an `nperseg` that provides a good balance of time and frequency resolution to clearly see the hops.",
+      "hint": "You can create the signal by concatenating four 0.25-second segments, each with a different frequency. An `nperseg` around 512 or 1024 should work well.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import spectrogram\n\nfs = 100e3\nhop_duration = 0.25\nsamples_per_hop = int(fs * hop_duration)\nt_hop = np.arange(samples_per_hop) / fs\n\nfreqs = [10e3, 20e3, 30e3, 40e3]\nsignal = np.array([])\n\nfor f in freqs:\n    hop = np.cos(2 * np.pi * f * t_hop)\n    signal = np.concatenate((signal, hop))\n\n# Add noise\nnoise = 0.5 * np.random.randn(len(signal))\nx = signal + noise\n\n# Compute spectrogram\nf, t_spec, Sxx = spectrogram(x, fs, window='hann', nperseg=1024, noverlap=512)\n\nplt.figure(figsize=(10, 4))\nplt.pcolormesh(t_spec, f/1000, 10 * np.log10(Sxx), shading='gouraud', cmap='inferno')\nplt.title('Spectrogram of FHSS Signal')\nplt.ylabel('Frequency (kHz)')\nplt.xlabel('Time (sec)')\nplt.colorbar(label='Power (dB)')\nplt.ylim(0, 50)\nplt.tight_layout()\nplt.show()",
+      "explanation": "The spectrogram clearly shows the signal energy shifting frequencies over time. An `nperseg` of 1024 at 100 kHz gives a time resolution of ~10 ms and a frequency resolution of ~97 Hz, which is a good compromise for visualizing 250 ms hops spaced by 10 kHz."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is the primary purpose of applying a window function to a signal before computing the FFT?",
+      "options": [
+        "To increase the frequency resolution of the FFT.",
+        "To reduce spectral leakage caused by discontinuities at the signal boundaries.",
+        "To increase the total power of the signal in the frequency domain.",
+        "To shift the zero-frequency (DC) component to the center of the spectrum."
+      ],
+      "correctIndex": 1,
+      "explanation": "Windowing tapers the signal at the edges, reducing the discontinuities that cause energy to leak into adjacent frequency bins (spectral leakage). It actually decreases frequency resolution and signal power."
+    },
+    {
+      "question": "If you have a real-valued signal of length N=1024 sampled at fs=1000 Hz, what is the length of the output array from `np.fft.rfft`?",
+      "options": [
+        "1024",
+        "512",
+        "513",
+        "2048"
+      ],
+      "correctIndex": 2,
+      "explanation": "`np.fft.rfft` computes the one-sided spectrum for real signals. It returns N/2 + 1 points, which includes the DC bin (0 Hz) and the Nyquist bin (fs/2). For N=1024, this is 512 + 1 = 513."
+    },
+    {
+      "question": "Which of the following statements about zero-padding is true?",
+      "options": [
+        "Zero-padding increases the fundamental frequency resolution of the measurement.",
+        "Zero-padding reduces the scalloping loss by interpolating the spectrum.",
+        "Zero-padding decreases the Equivalent Noise Bandwidth (ENBW).",
+        "Zero-padding is equivalent to applying a rectangular window."
+      ],
+      "correctIndex": 1,
+      "explanation": "Zero-padding interpolates the spectrum, providing more points between the original frequency bins. This helps accurately locate peaks and reduces scalloping loss, but it does not increase the fundamental ability to resolve closely spaced tones."
+    },
+    {
+      "question": "In Welch's method (`scipy.signal.welch`), how does increasing the `nperseg` parameter affect the resulting PSD estimate?",
+      "options": [
+        "It increases frequency resolution and increases the variance (noise) of the estimate.",
+        "It decreases frequency resolution and decreases the variance of the estimate.",
+        "It increases frequency resolution and decreases the variance of the estimate.",
+        "It decreases frequency resolution and increases the variance of the estimate."
+      ],
+      "correctIndex": 0,
+      "explanation": "Increasing `nperseg` makes each segment longer, which improves frequency resolution (narrower bins). However, for a fixed total signal length, this means fewer segments are averaged, which increases the variance (noise) of the PSD estimate."
+    },
+    {
+      "question": "You compute the FFT of a real sine wave with amplitude A=4.0 using `X = np.fft.fft(x)`. If you normalize by N (`mag = np.abs(X)/N`), what will be the peak value in the positive frequency bins?",
+      "options": [
+        "4.0",
+        "2.0",
+        "8.0",
+        "1.0"
+      ],
+      "correctIndex": 1,
+      "explanation": "For a two-sided spectrum (`np.fft.fft`), the energy of a real sine wave is split equally between the positive and negative frequency bins. Therefore, the peak magnitude will be A/2, which is 2.0."
+    },
+    {
+      "question": "When converting a Power Spectral Density (PSD) value `Pxx` (in V^2/Hz) to dBm/Hz in a 50-ohm system, which formula is correct?",
+      "options": [
+        "10 * log10(Pxx / 50)",
+        "20 * log10(Pxx * 1000 / 50)",
+        "10 * log10(Pxx * 1000 / 50)",
+        "10 * log10(Pxx * 50 / 1000)"
+      ],
+      "correctIndex": 2,
+      "explanation": "Power in Watts is V^2 / R, so Pxx / 50 gives W/Hz. To convert Watts to milliwatts (for dBm), multiply by 1000. Since it's power, use 10 * log10. Thus, 10 * log10(Pxx * 1000 / 50)."
+    }
+  ]
+}

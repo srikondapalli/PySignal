@@ -1,0 +1,162 @@
+{
+  "id": "day-02",
+  "day": 2,
+  "title": "NumPy Fundamentals: Arrays, Vectorization & Broadcasting",
+  "subtitle": "Mastering the core data structure of Python for scientific computing and DSP.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Understand the fundamental differences between NumPy's ndarray and MATLAB's matrix, including 0-based indexing and element-wise defaults.",
+    "Create, manipulate, and slice arrays efficiently, specifically handling complex data types (complex64/128) for IQ signals.",
+    "Apply NumPy's broadcasting rules to eliminate explicit loops and write vectorized, high-performance code.",
+    "Perform matrix operations, linear algebra, and random number generation using modern NumPy idioms."
+  ],
+  "sections": [
+    {
+      "heading": "1. The ndarray vs MATLAB Matrix: Element-wise Default & Data Types",
+      "content": "The core of NumPy is the N-dimensional array object, `ndarray`. For a MATLAB user, the most critical paradigm shift is understanding that **NumPy arrays default to element-wise operations**, whereas MATLAB defaults to matrix operations. If you multiply two arrays `A * B` in NumPy, it performs an element-by-element (Hadamard) product, not matrix multiplication.\n\nAnother key difference is data types (`dtype`). MATLAB uses double-precision floats by default. NumPy allows fine-grained control over memory. In DSP and wireless communications, we frequently work with In-Phase and Quadrature (IQ) data, which requires complex numbers. NumPy provides `np.complex64` (two 32-bit floats) and `np.complex128` (two 64-bit floats). Using `complex64` halves memory bandwidth, which is crucial when processing gigabytes of SDR captures, though `complex128` is the default when combining standard floats with the imaginary unit `1j`.",
+      "code": "import numpy as np\n\n# Create two 1D arrays\na = np.array([1, 2, 3])\nb = np.array([4, 5, 6])\n\n# Element-wise multiplication (NOT dot product!)\nc = a * b\nprint(f\"Element-wise a * b: {c}\")\n\n# Working with IQ data (complex numbers)\n# '1j' is the imaginary unit in Python (equivalent to 1i or 1j in MATLAB)\niq_sample = 0.707 + 0.707j\nprint(f\"Type of iq_sample: {type(iq_sample)}\")\n\n# Create an array of complex IQ data explicitly typed as complex64\niq_array = np.array([1+1j, -1+1j, -1-1j, 1-1j], dtype=np.complex64)\nprint(f\"IQ Array dtype: {iq_array.dtype}\")\nprint(f\"Memory size (bytes): {iq_array.nbytes}\")",
+      "codeTitle": "Element-wise Operations and Complex Data Types",
+      "matlabComparison": "% MATLAB defaults to matrix operations for *, and element-wise for .*\na = [1, 2, 3];\nb = [4, 5, 6];\n% c = a * b; % ERROR: Inner matrix dimensions must agree.\nc = a .* b; % Element-wise\n\n% Complex numbers\niq_sample = 0.707 + 0.707i;\niq_array = [1+1i, -1+1i, -1-1i, 1-1i]; % Defaults to double (complex128 equivalent)"
+    },
+    {
+      "heading": "2. Array Creation: zeros, arange, and linspace",
+      "content": "Creating arrays in NumPy is very similar to MATLAB, but with slightly different syntax. To pre-allocate arrays, use `np.zeros()` or `np.ones()`. Note that the shape argument must be a tuple (e.g., `(3, 4)`) rather than separate arguments as in MATLAB.\n\nFor generating sequences, NumPy provides `np.arange()` and `np.linspace()`. \n- `np.arange(start, stop, step)` is the equivalent of MATLAB's `start:step:stop`. However, **the `stop` value is exclusive** in Python. `np.arange(0, 10)` generates 0 through 9.\n- `np.linspace(start, stop, num)` generates `num` linearly spaced points. Unlike `arange`, `linspace` **includes** the stop value by default, making it the preferred choice for generating time vectors or frequency axes where you want exact endpoints.",
+      "code": "import numpy as np\n\n# Pre-allocate a 2x3 matrix of zeros\n# Note the double parentheses: np.zeros takes a tuple for the shape\nZ = np.zeros((2, 3), dtype=np.float32)\nprint(\"Zeros matrix:\\n\", Z)\n\n# Generate a sequence using arange (stop is exclusive)\n# Equivalent to MATLAB's 0:2:8\nseq = np.arange(0, 10, 2)\nprint(\"\\narange(0, 10, 2):\", seq)\n\n# Generate a time vector using linspace\n# 100 points from 0 to 1 (inclusive)\nfs = 100  # Sample rate in Hz\nt = np.linspace(0, 1, fs, endpoint=False) # Often we want endpoint=False for time vectors\nprint(f\"\\nTime vector length: {len(t)}, First: {t[0]}, Last: {t[-1]}\")",
+      "codeTitle": "Array Creation and Time Vectors",
+      "matlabComparison": "% MATLAB array creation\nZ = zeros(2, 3); % Separate arguments\n\n% Sequence generation (inclusive stop)\nseq = 0:2:8; % [0, 2, 4, 6, 8]\n\n% Linspace\nfs = 100;\nt = linspace(0, 1 - 1/fs, fs); % Manual endpoint exclusion"
+    },
+    {
+      "heading": "3. Indexing, Slicing, and Fancy Indexing",
+      "content": "Python uses **0-based indexing**, meaning the first element is at index 0. This is a major adjustment from MATLAB's 1-based indexing. Furthermore, Python uses square brackets `[]` for indexing, reserving parentheses `()` for function calls.\n\nSlicing in NumPy uses the colon operator `:` similar to MATLAB, but the syntax is `start:stop:step`. Crucially, the `stop` index is **exclusive**. `x[0:5]` returns elements 0, 1, 2, 3, and 4. Negative indices are supported and count from the end of the array: `x[-1]` is the last element.\n\nNumPy also supports \"fancy indexing\" (indexing via arrays of integers or booleans). Boolean indexing (masking) is extremely powerful for filtering signals, such as finding all samples above a certain threshold.",
+      "code": "import numpy as np\n\n# Create a sample signal\nx = np.arange(10, 20)\nprint(\"Original array:\", x)\n\n# 0-based indexing\nprint(\"First element:\", x[0])\nprint(\"Last element:\", x[-1])\n\n# Slicing: start:stop:step (stop is exclusive)\nprint(\"First 5 elements (x[0:5]):\", x[0:5])\nprint(\"Every second element (x[::2]):\", x[::2])\nprint(\"Reversed array (x[::-1]):\", x[::-1])\n\n# Boolean indexing (Masking)\n# Find all values greater than 15\nmask = x > 15\nfiltered_x = x[mask]\nprint(\"\\nValues > 15:\", filtered_x)\n\n# Modify values using a mask (e.g., clipping a signal)\nx[x > 17] = 17\nprint(\"Clipped array:\", x)",
+      "codeTitle": "Slicing and Boolean Masking",
+      "matlabComparison": "% MATLAB 1-based indexing and slicing\nx = 10:19;\nfirst_elem = x(1);\nlast_elem = x(end);\n\n% Slicing (inclusive)\nfirst_five = x(1:5);\nevery_second = x(1:2:end);\nreversed_x = x(end:-1:1);\n\n% Logical indexing\nfiltered_x = x(x > 15);\nx(x > 17) = 17; % Clipping"
+    },
+    {
+      "heading": "4. Reshape, Transpose, and Hermitian Conjugate",
+      "content": "Changing the shape of data is common when framing signals (e.g., converting a 1D stream into an N x M matrix for OFDM symbol processing). NumPy's `reshape()` method does this efficiently without copying data in memory. Note that NumPy fills arrays row-by-row (C-contiguous) by default, whereas MATLAB fills column-by-column (Fortran-contiguous).\n\nTransposing an array is done via the `.T` attribute. However, **`.T` only performs a spatial transpose, not a complex conjugate transpose**. In MATLAB, the apostrophe `'` operator does both (Hermitian transpose), while `.'` does a spatial transpose. In NumPy, to get the Hermitian transpose of a complex matrix, you must explicitly chain the conjugate and transpose methods: `A.conj().T`.",
+      "code": "import numpy as np\n\n# Create a 1D array of 12 elements\nx = np.arange(12)\n\n# Reshape into a 3x4 matrix (fills row-by-row)\nM = x.reshape((3, 4))\nprint(\"Reshaped 3x4 matrix:\\n\", M)\n\n# Spatial transpose\nprint(\"\\nSpatial Transpose (M.T):\\n\", M.T)\n\n# Complex matrices and Hermitian transpose\nH = np.array([[1+1j, 2-2j], \n              [3+0j, 4+4j]])\n\nprint(\"\\nOriginal Complex Matrix:\\n\", H)\nprint(\"\\nSpatial Transpose only (H.T):\\n\", H.T)\nprint(\"\\nHermitian Transpose (H.conj().T):\\n\", H.conj().T)",
+      "codeTitle": "Reshaping and Hermitian Transpose",
+      "matlabComparison": "% MATLAB reshape fills column-by-column!\nx = 0:11;\nM = reshape(x, 3, 4); % Result is different from NumPy!\n\n% Transpose operators\nH = [1+1i, 2-2i; 3+0i, 4+4i];\nspatial_T = H.'; % Spatial only\nhermitian_T = H'; % Complex conjugate transpose"
+    },
+    {
+      "heading": "5. Matrix Operations and Linear Algebra",
+      "content": "Since `*` performs element-wise multiplication, how do we perform true matrix multiplication? In modern Python (3.5+), the `@` operator is used for matrix multiplication. You can also use `np.dot()`, but `@` is preferred for readability and handles multi-dimensional arrays (like batches of matrices) more intuitively.\n\nFor advanced linear algebra operations like inversions, eigenvalue decompositions, or SVD, NumPy provides the `np.linalg` submodule. When solving systems of linear equations (e.g., `Ax = b`), avoid computing the inverse explicitly (`np.linalg.inv(A) @ b`). Instead, use `np.linalg.solve(A, b)`, which is numerically more stable and faster, equivalent to MATLAB's backslash operator `A \\ b`.",
+      "code": "import numpy as np\n\n# Define two matrices\nA = np.array([[1, 2], \n              [3, 4]])\nB = np.array([[5, 6], \n              [7, 8]])\n\n# Matrix multiplication using the @ operator\nC = A @ B\nprint(\"Matrix Multiplication (A @ B):\\n\", C)\n\n# Linear Algebra: Solving Ax = b\n# Let's solve for x in the equation Ax = b\nb = np.array([9, 11])\n\n# DO NOT do this: x = np.linalg.inv(A) @ b\n# DO this instead (numerically stable):\nx = np.linalg.solve(A, b)\nprint(\"\\nSolution to Ax = b:\", x)\n\n# Eigenvalue decomposition\neigenvalues, eigenvectors = np.linalg.eig(A)\nprint(\"\\nEigenvalues:\", eigenvalues)",
+      "codeTitle": "Matrix Multiplication and Linear Algebra",
+      "matlabComparison": "% MATLAB matrix multiplication\nA = [1, 2; 3, 4];\nB = [5, 6; 7, 8];\nC = A * B; % Matrix multiplication by default\n\n% Solving Ax = b\nb = [9; 11];\nx = A \\ b; % Backslash operator for numerical stability\n\n% Eigenvalue decomposition\n[V, D] = eig(A);"
+    },
+    {
+      "heading": "6. Broadcasting Rules: The Secret Weapon of NumPy",
+      "content": "Broadcasting is arguably NumPy's most powerful feature. It describes how NumPy treats arrays with different shapes during arithmetic operations. Subject to certain constraints, the smaller array is \"broadcast\" across the larger array so that they have compatible shapes.\n\nThe rule is simple: **Two dimensions are compatible when they are equal, or when one of them is 1.** NumPy compares shapes element-wise, starting from the trailing (rightmost) dimensions and working leftwards.\n\nFor example, if you have a matrix of shape `(4, 3)` and a vector of shape `(3,)`, NumPy treats the vector as `(1, 3)` and duplicates it 4 times vertically to perform the operation. This eliminates the need for MATLAB's `repmat` or explicit loops, leading to cleaner and faster code.",
+      "code": "import numpy as np\n\n# Matrix of shape (4, 3)\n# Imagine 4 sensors, each with 3 samples\ndata = np.array([[1, 2, 3],\n                 [4, 5, 6],\n                 [7, 8, 9],\n                 [10, 11, 12]])\n\n# Vector of shape (3,)\n# Calibration offsets for the 3 sample positions\noffsets = np.array([100, 200, 300])\n\n# Broadcasting in action: (4, 3) + (3,)\n# The offsets vector is automatically applied to each row\ncalibrated_data = data + offsets\n\nprint(\"Original Data (4x3):\\n\", data)\nprint(\"\\nOffsets (3,):\", offsets)\nprint(\"\\nCalibrated Data (Broadcasting):\\n\", calibrated_data)",
+      "codeTitle": "Applying Calibration Offsets via Broadcasting",
+      "matlabComparison": "% In older MATLAB versions, you needed bsxfun or repmat\ndata = [1 2 3; 4 5 6; 7 8 9; 10 11 12];\noffsets = [100, 200, 300];\n\n% Modern MATLAB (R2016b+) supports implicit expansion (similar to broadcasting)\ncalibrated_data = data + offsets;"
+    },
+    {
+      "heading": "7. Vectorization vs Loops: Performance in Python",
+      "content": "In Python, `for` loops are notoriously slow because Python is an interpreted, dynamically typed language. The overhead of type-checking and dispatching operations on every iteration adds up quickly. \n\n**Vectorization** is the practice of replacing explicit `for` loops with array operations. When you use NumPy operations (like `np.sin()`, `np.exp()`, or basic arithmetic), the actual computation is pushed down to highly optimized, pre-compiled C or Fortran code (often linked against BLAS/LAPACK libraries). \n\nAs a DSP engineer, you should almost never iterate over individual samples of a signal in Python. Always look for a way to express the operation using NumPy's vectorized functions, slicing, or broadcasting. A vectorized operation can easily be 100x to 1000x faster than a pure Python loop.",
+      "code": "import numpy as np\nimport time\n\n# Generate a large signal (10 million samples)\nN = 10_000_000\nsignal = np.random.rand(N)\n\n# --- BAD: Pure Python Loop ---\nstart_time = time.time()\nresult_loop = np.zeros(N)\nfor i in range(N):\n    result_loop[i] = signal[i] ** 2 + 5\nloop_time = time.time() - start_time\n\n# --- GOOD: Vectorized NumPy ---\nstart_time = time.time()\n# The entire operation is done in optimized C code\nresult_vec = signal ** 2 + 5\nvec_time = time.time() - start_time\n\nprint(f\"Loop time: {loop_time:.4f} seconds\")\nprint(f\"Vectorized time: {vec_time:.4f} seconds\")\nprint(f\"Speedup: {loop_time / vec_time:.1f}x\")\n\n# Verify results are identical\nassert np.allclose(result_loop, result_vec)",
+      "codeTitle": "Performance Comparison: Loops vs Vectorization",
+      "matlabComparison": null
+    },
+    {
+      "heading": "8. Random Number Generation",
+      "content": "Generating noise (AWGN) or random bit streams is fundamental in wireless system simulation. Historically, NumPy used `np.random.randn()` or `np.random.rand()`, which relied on a global state. \n\nModern NumPy (version 1.17+) introduced a new, robust random number generation API. You should now instantiate a Generator object using `np.random.default_rng()`. This approach is thread-safe, statistically superior (using the PCG64 algorithm), and prevents hidden state dependencies across different parts of your simulation.\n\nTo generate complex AWGN, you generate the real and imaginary parts independently and combine them, ensuring you scale the variance correctly (usually dividing the noise power by 2 for each dimension).",
+      "code": "import numpy as np\n\n# Instantiate the modern random number generator\n# You can pass a seed for reproducibility: rng = np.random.default_rng(42)\nrng = np.random.default_rng()\n\n# Generate 10 random bits (0s and 1s)\nbits = rng.integers(0, 2, size=10)\nprint(\"Random bits:\", bits)\n\n# Generate Complex Additive White Gaussian Noise (AWGN)\nN_samples = 5\nnoise_power = 0.1 # Variance (sigma^2)\n\n# For complex noise, variance is split equally between I and Q\n# Standard deviation is sqrt(variance / 2)\nstd_dev = np.sqrt(noise_power / 2)\n\nnoise_I = rng.normal(loc=0.0, scale=std_dev, size=N_samples)\nnoise_Q = rng.normal(loc=0.0, scale=std_dev, size=N_samples)\ncomplex_noise = noise_I + 1j * noise_Q\n\nprint(\"\\nComplex AWGN samples:\")\nprint(np.round(complex_noise, 4))\nprint(f\"Measured Power (Variance): {np.var(complex_noise):.4f}\")",
+      "codeTitle": "Modern Random Number Generation and Complex AWGN",
+      "matlabComparison": "% MATLAB random generation\n% randi([0, 1], 1, 10) for bits\n% randn() for Gaussian\n\nN_samples = 5;\nnoise_power = 0.1;\nstd_dev = sqrt(noise_power / 2);\n\n% Complex AWGN\ncomplex_noise = std_dev * (randn(1, N_samples) + 1i * randn(1, N_samples));"
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Array Creation and Slicing",
+      "prompt": "Create a time vector `t` from 0 to 2 seconds (inclusive) with a sample rate of 1000 Hz. Then, create a 10 Hz sine wave `x` over this time vector. Finally, extract and print every 100th sample of the sine wave using slicing.",
+      "hint": "Use `np.linspace` or `np.arange` for the time vector. Remember that `np.arange` stop value is exclusive. For slicing, use the `start:stop:step` syntax.",
+      "solution": "import numpy as np\n\n# Parameters\nfs = 1000      # Sample rate in Hz\nf_sig = 10     # Signal frequency in Hz\nduration = 2.0 # Duration in seconds\n\n# 1. Create time vector\n# Using arange: we need to add a small epsilon or 1/fs to include the 2.0 endpoint\n# t = np.arange(0, duration + 1/fs, 1/fs)\n# Alternatively, using linspace (easier for inclusive endpoints):\nnum_samples = int(duration * fs) + 1\nt = np.linspace(0, duration, num_samples)\n\n# 2. Create the sine wave\nx = np.sin(2 * np.pi * f_sig * t)\n\n# 3. Extract every 100th sample\n# Slicing syntax: array[start:stop:step]\ndownsampled_x = x[::100]\n\nprint(f\"Total samples: {len(x)}\")\nprint(f\"Extracted samples: {len(downsampled_x)}\")\nprint(\"First 5 extracted values:\", np.round(downsampled_x[:5], 4))",
+      "explanation": "We first define the time vector. `np.linspace` is often safer when we want an exact number of points including the endpoint. The sine wave is generated using NumPy's vectorized `np.sin` and `np.pi`. Finally, `x[::100]` slices the array from the beginning to the end, taking steps of 100, effectively downsampling the signal by a factor of 100 without any loops."
+    },
+    {
+      "title": "Exercise 2: Complex Signals and Power Calculation",
+      "prompt": "Generate 1000 samples of a complex exponential signal $x[n] = e^{j 2\\pi f_0 n / f_s}$ where $f_0 = 100$ Hz and $f_s = 1000$ Hz. Add complex AWGN to the signal such that the Signal-to-Noise Ratio (SNR) is 10 dB. Calculate and print the actual measured SNR of your generated arrays.",
+      "hint": "The power of a complex exponential $e^{j\\theta}$ is 1. To get 10 dB SNR, the noise power should be 0.1. Remember to split the noise variance between the real and imaginary parts. Use `np.abs(x)**2` to calculate instantaneous power.",
+      "solution": "import numpy as np\n\n# Parameters\nfs = 1000\nf0 = 100\nN = 1000\nsnr_db = 10\n\n# 1. Generate complex exponential signal\nn = np.arange(N)\nx = np.exp(1j * 2 * np.pi * f0 * n / fs)\n\n# Calculate signal power (should be 1.0 for a pure complex exponential)\nsig_power = np.mean(np.abs(x)**2)\n\n# 2. Calculate required noise power\n# SNR_dB = 10 * log10(P_sig / P_noise)\n# P_noise = P_sig / (10^(SNR_dB / 10))\nnoise_power = sig_power / (10 ** (snr_db / 10))\n\n# 3. Generate complex AWGN\nrng = np.random.default_rng(123) # Seeded for reproducibility\nstd_dev = np.sqrt(noise_power / 2)\nnoise = rng.normal(0, std_dev, N) + 1j * rng.normal(0, std_dev, N)\n\n# 4. Add noise to signal\ny = x + noise\n\n# 5. Measure actual SNR\nmeasured_sig_power = np.mean(np.abs(x)**2)\nmeasured_noise_power = np.mean(np.abs(noise)**2)\nmeasured_snr_db = 10 * np.log10(measured_sig_power / measured_noise_power)\n\nprint(f\"Target SNR: {snr_db} dB\")\nprint(f\"Measured SNR: {measured_snr_db:.2f} dB\")",
+      "explanation": "This exercise tests complex array generation and random number generation. The signal is created using `np.exp()`. We calculate the required noise power using the standard SNR formula. Crucially, when generating the complex noise, the standard deviation for the `rng.normal` calls is `sqrt(noise_power / 2)` because the total noise power is the sum of the variances of the independent real and imaginary Gaussian components."
+    },
+    {
+      "title": "Exercise 3: Vectorized Nearest Neighbor Quantization",
+      "prompt": "You are given an array of continuous signal values and an array of valid quantization levels (e.g., an ADC or a constellation map). Write a completely vectorized function (no `for` loops) that maps each sample in the signal to the closest quantization level. Test it with a random signal of 10 values and levels `[-1.0, -0.5, 0.0, 0.5, 1.0]`.",
+      "hint": "Use broadcasting! If your signal has shape `(N,)` and your levels have shape `(M,)`, you can reshape them to `(N, 1)` and `(1, M)` to compute an `(N, M)` distance matrix. Then use `np.argmin()` along the correct axis to find the index of the closest level.",
+      "solution": "import numpy as np\n\ndef quantize_signal(signal, levels):\n    \"\"\"\n    Maps each element in 'signal' to the nearest value in 'levels'.\n    \"\"\"\n    # Ensure inputs are numpy arrays\n    sig_arr = np.asarray(signal)\n    lvl_arr = np.asarray(levels)\n    \n    # Reshape for broadcasting:\n    # sig_arr becomes (N, 1)\n    # lvl_arr becomes (1, M)\n    sig_col = sig_arr[:, np.newaxis] # or sig_arr.reshape(-1, 1)\n    lvl_row = lvl_arr[np.newaxis, :] # or lvl_arr.reshape(1, -1)\n    \n    # Compute absolute difference matrix of shape (N, M)\n    # Broadcasting automatically expands the dimensions\n    diff_matrix = np.abs(sig_col - lvl_row)\n    \n    # Find the index of the minimum difference along the levels axis (axis=1)\n    best_indices = np.argmin(diff_matrix, axis=1)\n    \n    # Map indices back to actual level values\n    quantized = lvl_arr[best_indices]\n    return quantized\n\n# Test the function\nrng = np.random.default_rng(42)\nsignal = rng.uniform(-1.2, 1.2, 10)\nlevels = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])\n\nquantized_signal = quantize_signal(signal, levels)\n\nprint(\"Levels:\", levels)\nprint(\"\\nOriginal Signal | Quantized Signal\")\nprint(\"-\" * 35)\nfor s, q in zip(signal, quantized_signal):\n    print(f\"{s:+7.4f}         | {q:+7.4f}\")",
+      "explanation": "This is a classic application of broadcasting. By adding a dummy axis to both the signal `(N, 1)` and the levels `(1, M)`, the subtraction `sig_col - lvl_row` broadcasts both arrays to an `(N, M)` matrix containing the distance from every sample to every level. `np.argmin(..., axis=1)` then finds the index of the minimum distance for each row (each sample). Finally, we use these indices to select the corresponding values from the `levels` array. This completely avoids slow Python loops."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "If `A` and `B` are 2D NumPy arrays, what does `C = A * B` compute?",
+      "options": [
+        "The standard matrix multiplication of A and B.",
+        "The element-wise (Hadamard) product of A and B.",
+        "The cross product of A and B.",
+        "It throws an error; you must use `.*` for element-wise multiplication."
+      ],
+      "correctIndex": 1,
+      "explanation": "In NumPy, the `*` operator performs element-wise multiplication. For matrix multiplication, you must use the `@` operator or `np.dot()`."
+    },
+    {
+      "question": "What is the result of `np.arange(0, 5)`?",
+      "options": [
+        "An array containing `[0, 1, 2, 3, 4, 5]`",
+        "An array containing `[1, 2, 3, 4, 5]`",
+        "An array containing `[0, 1, 2, 3, 4]`",
+        "An array containing 5 linearly spaced points between 0 and 5."
+      ],
+      "correctIndex": 2,
+      "explanation": "`np.arange(start, stop)` generates values up to, but NOT including, the `stop` value. Therefore, it stops at 4."
+    },
+    {
+      "question": "Given a 1D array `x = np.array([10, 20, 30, 40, 50])`, what does `x[1:4]` return?",
+      "options": [
+        "`[10, 20, 30, 40]`",
+        "`[20, 30, 40]`",
+        "`[20, 30, 40, 50]`",
+        "`[10, 20, 30]`"
+      ],
+      "correctIndex": 1,
+      "explanation": "Python uses 0-based indexing, so index 1 is `20`. The slice `1:4` goes up to, but excludes, index 4 (which is `50`). Thus, it returns elements at indices 1, 2, and 3: `[20, 30, 40]`."
+    },
+    {
+      "question": "How do you compute the Hermitian (complex conjugate) transpose of a 2D complex array `H` in NumPy?",
+      "options": [
+        "`H.T`",
+        "`H'`",
+        "`np.transpose(H)`",
+        "`H.conj().T`"
+      ],
+      "correctIndex": 3,
+      "explanation": "The `.T` attribute only performs a spatial transpose. To get the Hermitian transpose, you must explicitly take the complex conjugate and then transpose: `H.conj().T`."
+    },
+    {
+      "question": "Which of the following is the modern, recommended way to generate random numbers in NumPy?",
+      "options": [
+        "`np.random.randn()`",
+        "`np.random.rand()`",
+        "`rng = np.random.default_rng(); rng.normal()`",
+        "`np.random.seed(42); np.random.normal()`"
+      ],
+      "correctIndex": 2,
+      "explanation": "Since NumPy 1.17, the recommended approach is to instantiate a Generator object using `np.random.default_rng()`. This avoids global state and uses a better statistical algorithm."
+    },
+    {
+      "question": "You have an array `A` of shape `(5, 1)` and an array `B` of shape `(4,)`. If you compute `A + B`, what is the shape of the resulting array?",
+      "options": [
+        "`(5, 4)`",
+        "`(5, 1)`",
+        "`(4,)`",
+        "It will raise a ValueError due to incompatible shapes."
+      ],
+      "correctIndex": 0,
+      "explanation": "According to broadcasting rules, `B` is padded to shape `(1, 4)`. Then, `A` (5, 1) and `B` (1, 4) are broadcast together to form an output of shape `(5, 4)`."
+    }
+  ]
+}

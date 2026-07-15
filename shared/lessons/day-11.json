@@ -1,0 +1,155 @@
+{
+  "id": "day-11",
+  "day": 11,
+  "title": "RF Front-End Impairments",
+  "subtitle": "Complex baseband modeling of RF impairments: phase noise, IQ imbalance, PA nonlinearity, and CFO.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Model phase noise using a defined PSD profile and analyze its effect on EVM and constellation.",
+    "Simulate IQ imbalance (gain/phase mismatch) and visualize image spurs.",
+    "Implement PA nonlinearity models (Rapp, Saleh) and demonstrate spectral regrowth (ACLR).",
+    "Understand the combined effect of CFO, DC offset, LO leakage, and other impairments on system performance."
+  ],
+  "sections": [
+    {
+      "heading": "1. Introduction to RF Impairments in Complex Baseband",
+      "content": "In modern wireless systems, the RF front-end introduces various non-ideal effects that degrade signal quality. Instead of simulating the system at the RF carrier frequency, which requires extremely high sampling rates, we model these impairments in the complex baseband domain. This approach is computationally efficient and captures the essential physics of the impairments. The key impairments we will cover include phase noise from local oscillators (LO), IQ imbalance from imperfect mixers, power amplifier (PA) nonlinearity, carrier frequency offset (CFO), and DC offset/LO leakage. By modeling these effects, we can evaluate system performance metrics such as Error Vector Magnitude (EVM) and Adjacent Channel Leakage Ratio (ACLR), and design digital compensation algorithms.",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": null
+    },
+    {
+      "heading": "2. Phase Noise Modeling and Simulation",
+      "content": "Phase noise arises from short-term random phase fluctuations in the local oscillator. In the frequency domain, it appears as skirts around the carrier. A common way to model phase noise is by specifying a Power Spectral Density (PSD) mask (e.g., dBc/Hz at various frequency offsets). To generate time-domain phase noise, we can filter white Gaussian noise to match the desired PSD profile. In OFDM systems, phase noise causes two main effects: Common Phase Error (CPE), which rotates all subcarriers equally, and Inter-Carrier Interference (ICI), which acts as additive noise. The code below demonstrates how to generate phase noise from a simple 1/f² (Lorentzian) PSD profile and apply it to a QAM constellation.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\n# Parameters\nfs = 10e6        # Sampling rate (10 MHz)\nN = 10000        # Number of samples\nt = np.arange(N) / fs\n\n# Generate a 16-QAM signal\nnp.random.seed(42)\nsymbols = np.random.choice([-3, -1, 1, 3], N) + 1j * np.random.choice([-3, -1, 1, 3], N)\nsymbols = symbols / np.sqrt(10) # Normalize average power to 1\n\n# Phase noise generation (simple 1/f^2 model using a lowpass filter)\n# In practice, a more complex filter matching a specific PSD mask is used.\nfc = 100e3 # 3dB bandwidth of the phase noise\nb, a = signal.butter(1, fc / (fs / 2), btype='low')\nwhite_noise = np.random.randn(N)\nphase_noise = signal.lfilter(b, a, white_noise)\n\n# Scale phase noise to a specific RMS value (e.g., 2 degrees)\nrms_phase_deg = 2.0\nphase_noise = phase_noise * (rms_phase_deg * np.pi / 180) / np.std(phase_noise)\n\n# Apply phase noise to the signal\nrx_symbols = symbols * np.exp(1j * phase_noise)\n\n# Plot constellation\nplt.figure(figsize=(6, 6))\nplt.scatter(rx_symbols.real, rx_symbols.imag, alpha=0.5, s=10)\nplt.title('16-QAM with Phase Noise (RMS = 2 deg)')\nplt.xlabel('In-Phase')\nplt.ylabel('Quadrature')\nplt.grid(True)\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "Generating and Applying Phase Noise",
+      "matlabComparison": null
+    },
+    {
+      "heading": "3. IQ Imbalance (Gain and Phase Mismatch)",
+      "content": "Direct conversion receivers and transmitters suffer from IQ imbalance due to imperfect matching between the In-phase (I) and Quadrature (Q) branches. This mismatch consists of a gain difference (amplitude imbalance) and a phase deviation from exactly 90 degrees (phase imbalance). The result is that the signal interferes with its own complex conjugate (the image). The Image Rejection Ratio (IRR) quantifies this effect. For a gain mismatch g and phase mismatch phi, the corrupted signal can be modeled as: y = alpha * x + beta * conj(x), where alpha = cos(phi/2) + j*g*sin(phi/2) and beta = g*cos(phi/2) - j*sin(phi/2). The code below simulates frequency-independent IQ imbalance and visualizes the image spur.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Parameters\nfs = 10e6\nN = 8192\nt = np.arange(N) / fs\n\n# Generate a complex tone at f0\nf0 = 1e6\nx = np.exp(1j * 2 * np.pi * f0 * t)\n\n# IQ Imbalance parameters\ngain_imb_dB = 1.0 # Gain imbalance in dB\nphase_imb_deg = 5.0 # Phase imbalance in degrees\n\n# Convert to linear and radians\ng = 10**(gain_imb_dB / 20)\nphi = phase_imb_deg * np.pi / 180\n\n# Apply IQ imbalance\n# I branch: gain g, phase phi/2\n# Q branch: gain 1/g, phase -phi/2\nI = g * np.real(x) * np.cos(phi/2) - (1/g) * np.imag(x) * np.sin(phi/2)\nQ = g * np.real(x) * np.sin(phi/2) + (1/g) * np.imag(x) * np.cos(phi/2)\ny = I + 1j * Q\n\n# Calculate spectrum\nX = 20 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(x))) / N + 1e-12)\nY = 20 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(y))) / N + 1e-12)\nf = np.fft.fftshift(np.fft.fftfreq(N, 1/fs))\n\n# Plot spectrum\nplt.figure(figsize=(10, 4))\nplt.plot(f/1e6, Y, label='With IQ Imbalance')\nplt.plot(f/1e6, X, '--', label='Ideal Signal')\nplt.title('Spectrum showing Image Spur due to IQ Imbalance')\nplt.xlabel('Frequency (MHz)')\nplt.ylabel('Magnitude (dB)')\nplt.legend()\nplt.grid(True)\nplt.ylim([-80, 5])\nplt.show()",
+      "codeTitle": "Simulating IQ Imbalance and Image Spur",
+      "matlabComparison": "% MATLAB IQ Imbalance\ng = 10^(gain_imb_dB/20);\nphi = phase_imb_deg * pi / 180;\nI = g * real(x) * cos(phi/2) - (1/g) * imag(x) * sin(phi/2);\nQ = g * real(x) * sin(phi/2) + (1/g) * imag(x) * cos(phi/2);\ny = I + 1i * Q;"
+    },
+    {
+      "heading": "4. Power Amplifier (PA) Nonlinearity",
+      "content": "Power amplifiers are inherently nonlinear devices, especially when operated near saturation for high power efficiency. This nonlinearity causes amplitude-to-amplitude (AM/AM) and amplitude-to-phase (AM/PM) distortion. Common memoryless models include the Rapp model (often used for solid-state PAs) and the Saleh model (often used for TWTAs). The nonlinearity causes in-band distortion (increasing EVM) and out-of-band spectral regrowth (increasing ACLR). Key metrics include the 1 dB compression point (P1dB) and the third-order intercept point (IP3). To mitigate these effects, the signal is often backed off from saturation (Input/Output Back-Off, IBO/OBO).",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Rapp Model for Solid State PA\ndef rapp_model(x, p, v_sat):\n    # x: input complex signal\n    # p: smoothness parameter\n    # v_sat: saturation voltage\n    abs_x = np.abs(x)\n    gain = 1.0 / (1.0 + (abs_x / v_sat)**(2*p))**(1/(2*p))\n    return x * gain\n\n# Generate a random QPSK signal and upsample it to see spectral regrowth\nN = 4096\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\n# Simple upsampling and pulse shaping (root raised cosine would be better)\nfrom scipy.signal import upfirdn, firwin\nup = 4\nh = firwin(31, 1.0/up)\nx = upfirdn(h, symbols, up)\n\n# Apply PA model\nv_sat = 1.5\np_param = 2.0\ny = rapp_model(x, p_param, v_sat)\n\n# Calculate PSD\nf, Pxx_x = signal.welch(x, fs=1.0, nperseg=1024, return_onesided=False)\nf, Pxx_y = signal.welch(y, fs=1.0, nperseg=1024, return_onesided=False)\n\n# Shift for plotting\nf = np.fft.fftshift(f)\nPxx_x = 10 * np.log10(np.fft.fftshift(Pxx_x) + 1e-12)\nPxx_y = 10 * np.log10(np.fft.fftshift(Pxx_y) + 1e-12)\n\nplt.figure(figsize=(10, 4))\nplt.plot(f, Pxx_y, label='PA Output (Rapp Model)')\nplt.plot(f, Pxx_x, '--', label='PA Input')\nplt.title('Spectral Regrowth due to PA Nonlinearity')\nplt.xlabel('Normalized Frequency')\nplt.ylabel('PSD (dB)')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Rapp PA Model and Spectral Regrowth",
+      "matlabComparison": null
+    },
+    {
+      "heading": "5. Memoryless Polynomial Model for PA",
+      "content": "While the Rapp and Saleh models are physically motivated, a more general approach for modeling PA nonlinearity (and for designing digital predistortion, DPD) is the memoryless polynomial model. The output is represented as a polynomial function of the input: y = sum(a_k * x * |x|^(k-1)) for odd k (since even-order intermodulation products fall far out of band). The coefficients a_k are complex, allowing both AM/AM and AM/PM modeling. If the PA exhibits memory effects (where the output depends on past inputs), a Volterra series or memory polynomial model is required.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Memoryless Polynomial PA Model\ndef poly_pa(x, coeffs):\n    # coeffs: list of complex coefficients [a1, a3, a5, ...]\n    y = np.zeros_like(x, dtype=complex)\n    abs_x_sq = np.abs(x)**2\n    for i, a in enumerate(coeffs):\n        k = 2*i + 1\n        y += a * x * (abs_x_sq**i)\n    return y\n\n# Example coefficients (a1, a3, a5)\ncoeffs = [1.0 + 0j, -0.05 + 0.02j, 0.005 - 0.001j]\n\n# Generate input power sweep\npin_dBm = np.linspace(-20, 10, 100)\npin_lin = 10**((pin_dBm - 30) / 10)\nvin = np.sqrt(pin_lin * 50) # Assuming 50 ohms\n\n# Apply model\nvout = poly_pa(vin, coeffs)\npout_lin = np.abs(vout)**2 / 50\npout_dBm = 10 * np.log10(pout_lin) + 30\n\n# Plot AM/AM\nplt.figure(figsize=(8, 4))\nplt.plot(pin_dBm, pout_dBm, label='Nonlinear PA')\nplt.plot(pin_dBm, pin_dBm + 10*np.log10(np.abs(coeffs[0])**2), '--', label='Ideal Linear')\nplt.title('AM/AM Characteristic (Polynomial Model)')\nplt.xlabel('Input Power (dBm)')\nplt.ylabel('Output Power (dBm)')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Memoryless Polynomial PA Model",
+      "matlabComparison": null
+    },
+    {
+      "heading": "6. CFO, DC Offset, and LO Leakage",
+      "content": "Carrier Frequency Offset (CFO) occurs when the transmitter and receiver LO frequencies are not perfectly aligned, or due to Doppler shift. In the time domain, CFO causes a progressive phase rotation: y[n] = x[n] * exp(j*2*pi*delta_f*n*Ts). DC offset and LO leakage appear as a spike at DC (0 Hz) in the baseband spectrum. This can be caused by self-mixing of the LO signal in the mixer. DC offset can severely degrade the performance of ADCs by reducing their dynamic range and can interfere with subcarriers near DC in OFDM systems. It is typically mitigated using AC coupling or digital DC removal filters.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Parameters\nfs = 1e6\nN = 1024\nt = np.arange(N) / fs\n\n# Signal: QPSK symbols\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\n\n# Impairments\ncfo_hz = 5000 # 5 kHz CFO\ndc_offset = 0.2 + 0.1j # Complex DC offset (LO leakage)\n\n# Apply CFO and DC offset\nrx_signal = symbols * np.exp(1j * 2 * np.pi * cfo_hz * t) + dc_offset\n\n# Plot spectrum to show DC offset and shifted signal\nf = np.fft.fftshift(np.fft.fftfreq(N, 1/fs))\nRx_spec = 20 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(rx_signal))) / N + 1e-12)\n\nplt.figure(figsize=(10, 4))\nplt.plot(f/1e3, Rx_spec)\nplt.title('Spectrum with CFO and DC Offset')\nplt.xlabel('Frequency (kHz)')\nplt.ylabel('Magnitude (dB)')\nplt.annotate('DC Offset', xy=(0, 20*np.log10(np.abs(dc_offset))), xytext=(100, -10),\n             arrowprops=dict(facecolor='black', shrink=0.05))\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Simulating CFO and DC Offset",
+      "matlabComparison": null
+    },
+    {
+      "heading": "7. Combined Impairment Chain and EVM",
+      "content": "In a real system, all these impairments occur simultaneously. The combined effect is typically evaluated using Error Vector Magnitude (EVM), which measures the difference between the ideal transmitted symbols and the received symbols after equalization. EVM is often expressed as a percentage or in dB. When simulating a full chain, the order of operations matters. A typical TX chain might be: Baseband Signal -> IQ Imbalance -> PA Nonlinearity. The RX chain would be: LNA -> CFO -> IQ Imbalance -> Baseband Processing. By sweeping parameters like PA back-off, we can observe the trade-off between power efficiency and EVM.",
+      "code": "import numpy as np\n\ndef calculate_evm(tx_symbols, rx_symbols):\n    # Ensure symbols are aligned and phase-corrected (simplified here)\n    # In practice, synchronization and equalization are required before EVM calculation\n    error_vector = rx_symbols - tx_symbols\n    rms_error = np.sqrt(np.mean(np.abs(error_vector)**2))\n    rms_ref = np.sqrt(np.mean(np.abs(tx_symbols)**2))\n    evm_pct = (rms_error / rms_ref) * 100\n    evm_db = 20 * np.log10(rms_error / rms_ref)\n    return evm_pct, evm_db\n\n# Example usage with dummy data\nN = 1000\ntx = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\n# Add some noise and phase rotation to simulate impairments\nrx = tx * np.exp(1j * 0.05) + 0.05 * (np.random.randn(N) + 1j*np.random.randn(N))\n\nevm_pct, evm_db = calculate_evm(tx, rx)\nprint(f\"EVM: {evm_pct:.2f}% ({evm_db:.2f} dB)\")",
+      "codeTitle": "Calculating EVM",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Phase Noise PSD to RMS Phase Error",
+      "prompt": "Given a phase noise sequence `phi_n` generated at a sampling rate `fs`, write a function to calculate the RMS phase error in degrees. Then, generate a phase noise sequence using a simple first-order lowpass filter (cutoff 10 kHz, fs 1 MHz) driven by white Gaussian noise, and scale it so the RMS phase error is exactly 3 degrees.",
+      "hint": "RMS is the square root of the mean of the squared values. Remember to convert between radians and degrees.",
+      "solution": "import numpy as np\nfrom scipy import signal\n\ndef generate_scaled_phase_noise(fs, N, fc, target_rms_deg):\n    # Generate white noise\n    w = np.random.randn(N)\n    \n    # Filter to shape PSD\n    b, a = signal.butter(1, fc / (fs / 2), btype='low')\n    phi_unscaled = signal.lfilter(b, a, w)\n    \n    # Calculate current RMS in radians\n    current_rms_rad = np.sqrt(np.mean(phi_unscaled**2))\n    \n    # Target RMS in radians\n    target_rms_rad = target_rms_deg * np.pi / 180.0\n    \n    # Scale\n    phi_scaled = phi_unscaled * (target_rms_rad / current_rms_rad)\n    return phi_scaled\n\n# Test\nfs = 1e6\nN = 10000\nfc = 10e3\ntarget = 3.0\nphi = generate_scaled_phase_noise(fs, N, fc, target)\n\nrms_deg = np.sqrt(np.mean(phi**2)) * 180 / np.pi\nprint(f\"Achieved RMS Phase Error: {rms_deg:.2f} degrees\")",
+      "explanation": "The exercise demonstrates how to shape the spectrum of white noise to create phase noise and then scale its variance to achieve a specific RMS phase error. This is a common technique for generating phase noise for system simulations when a specific integrated phase noise specification is given."
+    },
+    {
+      "title": "Exercise 2: Image Rejection Ratio (IRR) Calculation",
+      "prompt": "Write a function that takes the gain imbalance (in dB) and phase imbalance (in degrees) as inputs and calculates the Image Rejection Ratio (IRR) in dB. The IRR is defined as the ratio of the power of the desired signal component to the power of the image component. Plot the IRR (in dB) as a function of phase imbalance (0 to 10 degrees) for a fixed gain imbalance of 0.5 dB.",
+      "hint": "Recall the coefficients alpha and beta from the IQ imbalance model. IRR = |alpha|^2 / |beta|^2. Convert gain dB to linear amplitude gain g.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef calculate_irr(gain_imb_dB, phase_imb_deg):\n    g = 10**(gain_imb_dB / 20)\n    phi = phase_imb_deg * np.pi / 180\n    \n    alpha = np.cos(phi/2) + 1j * g * np.sin(phi/2)\n    beta = g * np.cos(phi/2) - 1j * np.sin(phi/2)\n    \n    irr_linear = (np.abs(alpha)**2) / (np.abs(beta)**2)\n    irr_dB = 10 * np.log10(irr_linear)\n    return irr_dB\n\nphase_sweep = np.linspace(0, 10, 100)\nirr_values = [calculate_irr(0.5, p) for p in phase_sweep]\n\nplt.figure(figsize=(8, 4))\nplt.plot(phase_sweep, irr_values)\nplt.title('IRR vs Phase Imbalance (Gain Imbalance = 0.5 dB)')\nplt.xlabel('Phase Imbalance (degrees)')\nplt.ylabel('IRR (dB)')\nplt.grid(True)\nplt.show()",
+      "explanation": "The IRR quantifies how well the receiver rejects the image frequency. By calculating alpha and beta, we find the power ratio between the desired signal and the image. The plot shows how quickly IRR degrades as phase mismatch increases."
+    },
+    {
+      "title": "Exercise 3: Saleh PA Model and AM/AM, AM/PM Extraction",
+      "prompt": "Implement the Saleh PA model. The Saleh model is defined by: A(r) = (alpha_a * r) / (1 + beta_a * r^2) for AM/AM, and Phi(r) = (alpha_p * r^2) / (1 + beta_p * r^2) for AM/PM, where r is the input amplitude. The output is y = A(r) * exp(j * (angle(x) + Phi(r))). Use parameters: alpha_a=2.1587, beta_a=1.1517, alpha_p=4.0033, beta_p=9.1040. Generate a complex input signal with varying amplitude, pass it through the model, and plot the AM/AM and AM/PM characteristics.",
+      "hint": "Extract the amplitude `r = np.abs(x)` and phase `theta = np.angle(x)` of the input. Calculate A(r) and Phi(r), then reconstruct the output.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef saleh_model(x, alpha_a=2.1587, beta_a=1.1517, alpha_p=4.0033, beta_p=9.1040):\n    r = np.abs(x)\n    theta = np.angle(x)\n    \n    A_r = (alpha_a * r) / (1 + beta_a * r**2)\n    Phi_r = (alpha_p * r**2) / (1 + beta_p * r**2)\n    \n    y = A_r * np.exp(1j * (theta + Phi_r))\n    return y\n\n# Generate input signal with varying amplitude\nr_in = np.linspace(0, 2, 200)\nx_in = r_in * np.exp(1j * 0) # Phase is 0 for simplicity\n\n# Apply model\ny_out = saleh_model(x_in)\n\n# Extract AM/AM and AM/PM\nam_am = np.abs(y_out)\nam_pm = np.angle(y_out) * 180 / np.pi # Convert to degrees\n\n# Plot\nfig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))\n\nax1.plot(r_in, am_am)\nax1.set_title('Saleh Model: AM/AM')\nax1.set_xlabel('Input Amplitude')\nax1.set_ylabel('Output Amplitude')\nax1.grid(True)\n\nax2.plot(r_in, am_pm)\nax2.set_title('Saleh Model: AM/PM')\nax2.set_xlabel('Input Amplitude')\nax2.set_ylabel('Phase Shift (degrees)')\nax2.grid(True)\n\nplt.tight_layout()\nplt.show()",
+      "explanation": "The Saleh model is a classic behavioral model for Traveling Wave Tube Amplifiers (TWTAs). Unlike the Rapp model which only models AM/AM, the Saleh model explicitly includes AM/PM distortion, which is critical for accurately simulating the performance of higher-order QAM systems."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Which of the following best describes the effect of Common Phase Error (CPE) in an OFDM system?",
+      "options": [
+        "It causes inter-symbol interference (ISI) between adjacent OFDM symbols.",
+        "It rotates all subcarriers in an OFDM symbol by the same random phase angle.",
+        "It acts as additive white Gaussian noise across all subcarriers.",
+        "It causes a frequency shift of the entire OFDM spectrum."
+      ],
+      "correctIndex": 1,
+      "explanation": "CPE is the mean phase error over an OFDM symbol duration. It affects all subcarriers equally, causing a common phase rotation. The higher-frequency components of phase noise cause Inter-Carrier Interference (ICI), which acts like additive noise."
+    },
+    {
+      "question": "In the context of IQ imbalance, what is the 'image' frequency of a signal located at baseband frequency +f0?",
+      "options": [
+        "0 Hz (DC)",
+        "+2*f0",
+        "-f0",
+        "It depends on the sampling rate."
+      ],
+      "correctIndex": 2,
+      "explanation": "IQ imbalance causes a signal to interfere with its complex conjugate. In the frequency domain, the complex conjugate of a signal at +f0 appears at -f0. This is known as the image frequency."
+    },
+    {
+      "question": "What does the 1 dB compression point (P1dB) of a Power Amplifier indicate?",
+      "options": [
+        "The input power level where the output power is 1 dB.",
+        "The output power level where the gain has dropped by 1 dB from its linear value.",
+        "The point where the third-order intermodulation products are 1 dB below the fundamental.",
+        "The power level where the PA efficiency is maximized."
+      ],
+      "correctIndex": 1,
+      "explanation": "P1dB is a standard metric for PA nonlinearity. It is defined as the output power level at which the amplifier's gain is 1 dB lower than its small-signal (linear) gain."
+    },
+    {
+      "question": "Which PA model is commonly used to model solid-state power amplifiers and primarily captures AM/AM distortion without AM/PM distortion?",
+      "options": [
+        "Saleh Model",
+        "Volterra Series",
+        "Memory Polynomial Model",
+        "Rapp Model"
+      ],
+      "correctIndex": 3,
+      "explanation": "The Rapp model is widely used for solid-state PAs and models the AM/AM characteristic with a smooth transition to saturation. It does not inherently model AM/PM distortion."
+    },
+    {
+      "question": "If a receiver has a Carrier Frequency Offset (CFO) of delta_f, how does this manifest in the time-domain baseband signal?",
+      "options": [
+        "As a constant phase shift.",
+        "As a progressive phase rotation of 2*pi*delta_f radians per second.",
+        "As an amplitude modulation of the signal.",
+        "As a delay in the time-domain samples."
+      ],
+      "correctIndex": 1,
+      "explanation": "CFO causes the phase of the received signal to rotate continuously over time. Mathematically, it is represented by multiplying the time-domain signal by exp(j*2*pi*delta_f*t)."
+    },
+    {
+      "question": "When simulating a memoryless polynomial PA model `y = a1*x + a3*x*|x|^2 + a5*x*|x|^4`, why are only odd-order terms (3, 5, etc.) typically included?",
+      "options": [
+        "Even-order terms do not exist in real power amplifiers.",
+        "Even-order terms produce intermodulation products that fall far outside the frequency band of interest.",
+        "Odd-order terms are easier to compute computationally.",
+        "Even-order terms only affect the phase, not the amplitude."
+      ],
+      "correctIndex": 1,
+      "explanation": "In a bandpass system, even-order nonlinearities generate harmonics and intermodulation products at frequencies near DC or near 2*fc, which are easily filtered out. Odd-order nonlinearities generate products near the fundamental frequency (fc), causing in-band distortion and adjacent channel leakage."
+    }
+  ]
+}

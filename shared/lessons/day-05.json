@@ -1,0 +1,156 @@
+{
+  "id": "day-05",
+  "day": 5,
+  "title": "Digital Filtering: FIR & IIR Design",
+  "subtitle": "Master filter design, implementation, and multi-rate processing in Python",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Design FIR filters using windowing and Parks-McClellan (remez) methods",
+    "Design IIR filters (Butterworth, Chebyshev, Elliptic) and convert to SOS for stability",
+    "Apply zero-phase filtering (filtfilt) and compensate for group delay",
+    "Analyze frequency response using freqz and sosfreqz",
+    "Implement multi-rate signal processing (decimation, interpolation, polyphase resampling)"
+  ],
+  "sections": [
+    {
+      "heading": "1. FIR Filter Design: Window Method",
+      "content": "Finite Impulse Response (FIR) filters are inherently stable and can be designed to have exact linear phase, meaning all frequency components are delayed by the same amount. The simplest approach to FIR design is the window method. We start with an ideal brick-wall filter impulse response (a sinc function) and truncate it using a window function (like Hamming, Hanning, or Kaiser) to reduce Gibbs phenomenon ripples.\n\nIn Python, `scipy.signal.firwin` is the workhorse for this. It designs a windowed FIR filter and returns the filter coefficients (taps). You specify the number of taps, the cutoff frequency (normalized to the Nyquist frequency by default, or in Hz if `fs` is provided), and the window type. The number of taps determines the transition bandwidth and stopband attenuation. A higher number of taps gives a sharper filter but increases computational cost and delay.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\n# Filter specifications\nfs = 100e3       # Sample rate: 100 kHz\ncutoff = 20e3    # Cutoff frequency: 20 kHz\nnumtaps = 101    # Number of taps (odd for Type I linear phase)\n\n# Design FIR filter using Hamming window\ntaps_hamming = signal.firwin(numtaps, cutoff, fs=fs, window='hamming')\n\n# Design FIR filter using Kaiser window (beta=8.0 for better stopband)\ntaps_kaiser = signal.firwin(numtaps, cutoff, fs=fs, window=('kaiser', 8.0))\n\n# Frequency response\nw, h_hamming = signal.freqz(taps_hamming, 1, fs=fs)\nw, h_kaiser = signal.freqz(taps_kaiser, 1, fs=fs)\n\nplt.figure(figsize=(10, 4))\nplt.plot(w, 20 * np.log10(np.abs(h_hamming)), label='Hamming')\nplt.plot(w, 20 * np.log10(np.abs(h_kaiser)), label='Kaiser (beta=8.0)')\nplt.title('FIR Filter Frequency Response')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Magnitude (dB)')\nplt.grid(True)\nplt.legend()\nplt.ylim([-100, 10])\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "FIR Design with firwin",
+      "matlabComparison": "MATLAB: b = fir1(n, Wn, window);\nPython: b = scipy.signal.firwin(numtaps, cutoff, window=window, fs=fs)"
+    },
+    {
+      "heading": "2. Optimal FIR Design: Parks-McClellan",
+      "content": "While the window method is simple, it doesn't allow precise control over passband ripple and stopband attenuation. The Parks-McClellan algorithm (also known as the Remez exchange algorithm) designs optimal equiripple FIR filters. It minimizes the maximum error between the desired frequency response and the actual response.\n\nIn `scipy.signal`, this is implemented as `remez`. You define frequency bands (edges) and the desired gain in each band. You can also specify weights to prioritize passband flatness over stopband attenuation, or vice versa. This method often yields a filter with fewer taps than the window method for the same specifications.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 100e3\nnumtaps = 51\n\n# Define bands: [0, 15kHz] passband, [25kHz, 50kHz] stopband\nbands = [0, 15e3, 25e3, 50e3]\ndesired = [1, 0] # Gain in each band\nweights = [1, 10] # 10x more penalty for stopband ripple\n\n# Design equiripple filter\ntaps_remez = signal.remez(numtaps, bands, desired, weight=weights, fs=fs)\n\n# Frequency response\nw, h_remez = signal.freqz(taps_remez, 1, fs=fs)\n\nplt.figure(figsize=(10, 4))\nplt.plot(w, 20 * np.log10(np.abs(h_remez)))\nplt.title('Equiripple FIR Filter (Parks-McClellan)')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Magnitude (dB)')\nplt.grid(True)\nplt.ylim([-80, 5])\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "Equiripple FIR Design with remez",
+      "matlabComparison": "MATLAB: b = firpm(n, f, a, w);\nPython: b = scipy.signal.remez(numtaps, bands, desired, weight=weights, fs=fs)"
+    },
+    {
+      "heading": "3. IIR Filter Design and SOS Sections",
+      "content": "Infinite Impulse Response (IIR) filters can achieve sharp cutoffs with much lower order (fewer coefficients) than FIR filters, reducing computational load and latency. However, they do not have linear phase, and high-order IIR filters can become unstable due to numerical precision issues when implemented as a single direct-form difference equation (using `b` and `a` coefficients).\n\nTo ensure numerical stability, IIR filters should always be implemented using Second-Order Sections (SOS), also known as biquads. `scipy.signal.iirfilter` (or specific functions like `butter`, `cheby1`, `ellip`) can return SOS directly by setting `output='sos'`. The SOS format cascades multiple 2nd-order filters, making it highly robust to quantization errors.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 100e3\ncutoff = 20e3\norder = 8\n\n# Design 8th-order Elliptic filter directly as SOS\n# Passband ripple: 1 dB, Stopband attenuation: 60 dB\nsos_ellip = signal.ellip(order, 1, 60, cutoff, btype='low', fs=fs, output='sos')\n\n# Design 8th-order Butterworth filter as SOS\nsos_butter = signal.butter(order, cutoff, btype='low', fs=fs, output='sos')\n\n# Frequency response using sosfreqz\nw, h_ellip = signal.sosfreqz(sos_ellip, worN=2000, fs=fs)\nw, h_butter = signal.sosfreqz(sos_butter, worN=2000, fs=fs)\n\nplt.figure(figsize=(10, 4))\nplt.plot(w, 20 * np.log10(np.abs(h_ellip)), label='Elliptic')\nplt.plot(w, 20 * np.log10(np.abs(h_butter)), label='Butterworth')\nplt.title('IIR Filter Frequency Response (SOS)')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Magnitude (dB)')\nplt.grid(True)\nplt.legend()\nplt.ylim([-100, 5])\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "IIR Design with SOS",
+      "matlabComparison": null
+    },
+    {
+      "heading": "4. Filtering Signals: lfilter, sosfilt, and filtfilt",
+      "content": "Once a filter is designed, you apply it to a signal. For FIR filters or low-order IIR filters in `[b, a]` format, use `scipy.signal.lfilter`. For IIR filters in SOS format, use `scipy.signal.sosfilt`.\n\nStandard filtering introduces a phase delay. For offline processing where the entire signal is available, you can use zero-phase filtering with `scipy.signal.filtfilt` (or `sosfiltfilt` for SOS). This function filters the signal forward, reverses the result, and filters it backward. This cancels out the phase delay, resulting in exactly zero phase distortion, and doubles the effective filter order (and stopband attenuation).",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 1000\nt = np.arange(1000) / fs\n# Signal: 10 Hz sine wave + high frequency noise\nx = np.sin(2 * np.pi * 10 * t) + 0.5 * np.random.randn(len(t))\n\n# Design a 4th-order Butterworth lowpass filter\nsos = signal.butter(4, 30, btype='low', fs=fs, output='sos')\n\n# Standard causal filtering (introduces delay)\ny_causal = signal.sosfilt(sos, x)\n\n# Zero-phase filtering (no delay, non-causal)\ny_zerophase = signal.sosfiltfilt(sos, x)\n\nplt.figure(figsize=(10, 4))\nplt.plot(t, x, alpha=0.3, label='Noisy Signal')\nplt.plot(t, y_causal, label='sosfilt (Causal)')\nplt.plot(t, y_zerophase, label='sosfiltfilt (Zero-phase)', linewidth=2)\nplt.xlim([0, 0.2])\nplt.title('Filtering: Causal vs Zero-Phase')\nplt.xlabel('Time (s)')\nplt.legend()\nplt.grid(True)\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "Applying Filters to Signals",
+      "matlabComparison": null
+    },
+    {
+      "heading": "5. Group Delay and Linear Phase Compensation",
+      "content": "FIR filters designed with symmetric coefficients (Type I-IV) have exact linear phase. This means the group delay (the derivative of phase with respect to frequency) is constant. For a Type I FIR filter with `N` taps, the group delay is exactly `(N-1)/2` samples.\n\nIn real-time systems where `filtfilt` cannot be used, you must account for this delay. When comparing the filtered signal to the original, or when aligning multiple signals, you shift the filtered signal back by `(N-1)/2` samples. IIR filters have non-linear phase, meaning different frequencies are delayed by different amounts, causing dispersion. `scipy.signal.group_delay` can be used to analyze this.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 1000\nnumtaps = 51\ntaps = signal.firwin(numtaps, 100, fs=fs)\n\n# Calculate group delay\nw, gd = signal.group_delay((taps, 1), fs=fs)\n\n# The theoretical delay for linear phase FIR is (N-1)/2\ntheoretical_delay = (numtaps - 1) / 2\n\nplt.figure(figsize=(10, 4))\nplt.plot(w, gd)\nplt.axhline(theoretical_delay, color='r', linestyle='--', label=f'Theoretical: {theoretical_delay} samples')\nplt.title('FIR Filter Group Delay')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Group Delay (samples)')\nplt.ylim([0, 30])\nplt.legend()\nplt.grid(True)\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "Analyzing Group Delay",
+      "matlabComparison": null
+    },
+    {
+      "heading": "6. Multi-rate Processing: Decimation and Interpolation",
+      "content": "Multi-rate signal processing involves changing the sample rate of a signal. Decimation reduces the sample rate, while interpolation increases it. To prevent aliasing during decimation, you must apply a lowpass anti-aliasing filter before downsampling. To prevent imaging during interpolation, you apply a lowpass anti-imaging filter after upsampling.\n\n`scipy.signal.resample_poly` is the most efficient and robust function for this in Python. It uses polyphase filtering, which combines the filtering and rate-change steps. It only computes the filter outputs that are actually needed, making it much faster than filtering the entire signal and then downsampling. It takes `up` and `down` integer factors. For simple integer decimation, `scipy.signal.decimate` can also be used, which defaults to an IIR Chebyshev type I filter.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs_in = 100e3\nt = np.arange(1000) / fs_in\nx = np.sin(2 * np.pi * 5e3 * t) # 5 kHz signal\n\n# Resample: up by 3, down by 4 (effective rate change: 3/4)\n# fs_out = 100e3 * (3/4) = 75e3\nup = 3\ndown = 4\n\n# resample_poly automatically designs and applies the polyphase FIR filter\ny = signal.resample_poly(x, up, down)\n\nfs_out = fs_in * up / down\nt_out = np.arange(len(y)) / fs_out\n\nplt.figure(figsize=(10, 4))\nplt.plot(t, x, 'o-', label=f'Original ({fs_in/1000} kHz)')\nplt.plot(t_out, y, 'x-', label=f'Resampled ({fs_out/1000} kHz)')\nplt.xlim([0, 0.001])\nplt.title('Polyphase Resampling')\nplt.xlabel('Time (s)')\nplt.legend()\nplt.grid(True)\nplt.tight_layout()\n# plt.show()",
+      "codeTitle": "Polyphase Resampling with resample_poly",
+      "matlabComparison": "MATLAB: y = resample(x, p, q);\nPython: y = scipy.signal.resample_poly(x, up, down)"
+    },
+    {
+      "heading": "7. Practical Example: LTE Anti-Aliasing Filter",
+      "content": "Consider a scenario where you are receiving a 20 MHz LTE signal sampled at 30.72 MSPS. You want to decimate this by a factor of 2 to 15.36 MSPS for a narrower band analysis. Before decimation, you must apply an anti-aliasing filter to remove energy above the new Nyquist frequency (7.68 MHz). The LTE signal occupies roughly 18 MHz (±9 MHz). We need a filter that passes 0 to 9 MHz and strongly attenuates anything above 7.68 MHz (which will alias back). Wait, this is impossible! You cannot decimate a 20 MHz signal to 15.36 MSPS without aliasing the edges of the signal. \n\nLet's correct the scenario: We want to isolate a 5 MHz channel (±2.5 MHz) from the 30.72 MSPS stream and decimate by 4 (new rate 7.68 MSPS, Nyquist 3.84 MHz). We need a filter that passes 0-2.5 MHz and attenuates above 3.84 MHz. We'll use a Parks-McClellan FIR filter for precise control.",
+      "code": "import numpy as np\nfrom scipy import signal\n\nfs = 30.72e6       # Original sample rate\ndecimation = 4\nfs_new = fs / decimation # 7.68 MSPS\nnyq_new = fs_new / 2     # 3.84 MHz\n\n# Filter specs\npassband_edge = 2.5e6\nstopband_edge = 3.84e6\n\n# Design equiripple filter\nnumtaps = 75\nbands = [0, passband_edge, stopband_edge, fs/2]\ndesired = [1, 0]\nweights = [1, 100] # High stopband attenuation\n\ntaps = signal.remez(numtaps, bands, desired, weight=weights, fs=fs)\n\n# Check attenuation at stopband edge\nw, h = signal.freqz(taps, 1, worN=[stopband_edge], fs=fs)\nattenuation_dB = 20 * np.log10(np.abs(h[0]))\nprint(f\"Attenuation at {stopband_edge/1e6} MHz: {attenuation_dB:.2f} dB\")\n\n# In practice, you would use resample_poly with these taps:\n# y = signal.resample_poly(x, 1, decimation, window=taps)",
+      "codeTitle": "Anti-Aliasing Filter Design",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Design and Compare FIR Windows",
+      "prompt": "Design two FIR lowpass filters with 101 taps and a cutoff frequency of 5 kHz at a sample rate of 48 kHz. Use a Rectangular window (`'boxcar'`) for the first and a Blackman window (`'blackman'`) for the second. Plot their magnitude frequency responses in dB on the same plot. Observe the trade-off between main lobe width (transition band) and side lobe level (stopband attenuation).",
+      "hint": "Use `scipy.signal.firwin` with `window='boxcar'` and `window='blackman'`. Use `scipy.signal.freqz` to get the frequency response.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 48000\ncutoff = 5000\nnumtaps = 101\n\ntaps_rect = signal.firwin(numtaps, cutoff, fs=fs, window='boxcar')\ntaps_blackman = signal.firwin(numtaps, cutoff, fs=fs, window='blackman')\n\nw, h_rect = signal.freqz(taps_rect, 1, fs=fs)\nw, h_blackman = signal.freqz(taps_blackman, 1, fs=fs)\n\nplt.figure(figsize=(10, 5))\nplt.plot(w, 20 * np.log10(np.abs(h_rect)), label='Rectangular')\nplt.plot(w, 20 * np.log10(np.abs(h_blackman)), label='Blackman')\nplt.title('FIR Window Comparison')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Magnitude (dB)')\nplt.legend()\nplt.grid(True)\nplt.ylim([-120, 10])\nplt.show()",
+      "explanation": "The Rectangular window has the narrowest transition band (steepest roll-off) but terrible stopband attenuation (high side lobes, ~21 dB down). The Blackman window has a much wider transition band but excellent stopband attenuation (>70 dB down). This illustrates the fundamental trade-off in window-based FIR design."
+    },
+    {
+      "title": "Exercise 2: IIR SOS Filtering",
+      "prompt": "Generate a 1-second signal sampled at 1000 Hz containing two sine waves: 50 Hz and 200 Hz. Design a 6th-order Chebyshev Type II (cheby2) lowpass filter with a cutoff of 100 Hz and 40 dB of stopband attenuation. Ensure you design it in SOS format. Filter the signal using `sosfiltfilt` to isolate the 50 Hz tone without phase shift. Plot the first 0.1 seconds of the original and filtered signals.",
+      "hint": "Use `scipy.signal.cheby2(N, rs, Wn, btype='low', output='sos', fs=fs)`. The `rs` parameter is the stopband attenuation in dB.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 1000\nt = np.arange(fs) / fs\nx = np.sin(2 * np.pi * 50 * t) + np.sin(2 * np.pi * 200 * t)\n\n# Design 6th-order Chebyshev II lowpass filter in SOS format\nsos = signal.cheby2(6, 40, 100, btype='low', output='sos', fs=fs)\n\n# Apply zero-phase filtering\ny = signal.sosfiltfilt(sos, x)\n\nplt.figure(figsize=(10, 4))\nplt.plot(t, x, alpha=0.5, label='Original (50Hz + 200Hz)')\nplt.plot(t, y, linewidth=2, label='Filtered (50Hz only)')\nplt.xlim([0, 0.1])\nplt.title('Zero-Phase IIR Filtering')\nplt.xlabel('Time (s)')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "explanation": "We use `cheby2` with `output='sos'` for numerical stability. The stopband attenuation `rs` is set to 40 dB. By using `sosfiltfilt`, we apply the filter forward and backward, which doubles the effective order (giving 80 dB attenuation) and completely cancels out the non-linear phase delay of the IIR filter, keeping the 50 Hz sine wave perfectly aligned with the original."
+    },
+    {
+      "title": "Exercise 3: Polyphase Decimation",
+      "prompt": "You have a signal sampled at 10 MHz. You need to decimate it to 2 MHz. Create a random noise signal of length 10,000 to represent the input. Use `scipy.signal.resample_poly` to perform the decimation. Verify the length of the output signal. What are the `up` and `down` factors?",
+      "hint": "The decimation factor is the ratio of the input rate to the output rate. `resample_poly` takes `up` and `down` such that `output_rate = input_rate * up / down`.",
+      "solution": "import numpy as np\nfrom scipy import signal\n\nfs_in = 10e6\nfs_out = 2e6\n\n# Calculate up and down factors\n# fs_out = fs_in * (up / down) -> up/down = fs_out / fs_in = 2/10 = 1/5\nup = 1\ndown = 5\n\n# Generate input signal\nx = np.random.randn(10000)\n\n# Perform polyphase decimation\ny = signal.resample_poly(x, up, down)\n\nprint(f\"Input length: {len(x)}\")\nprint(f\"Output length: {len(y)}\")\nprint(f\"Expected length: {len(x) * up / down}\")",
+      "explanation": "To go from 10 MHz to 2 MHz, the rate change factor is 2/10 = 1/5. Therefore, `up=1` and `down=5`. `resample_poly` automatically designs an appropriate anti-aliasing lowpass filter and applies it efficiently using a polyphase structure before downsampling by 5. The output length is exactly 1/5th of the input length."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why is it highly recommended to use Second-Order Sections (SOS) for IIR filters instead of direct `[b, a]` coefficients?",
+      "options": [
+        "SOS filters have linear phase.",
+        "SOS filters require fewer coefficients.",
+        "SOS filters are more robust to numerical precision errors and quantization.",
+        "SOS filters execute faster in Python."
+      ],
+      "correctIndex": 2,
+      "explanation": "High-order IIR filters implemented with a single difference equation (direct form) are highly sensitive to coefficient quantization, which can move poles outside the unit circle and cause instability. Cascading 2nd-order sections (SOS) mitigates this issue."
+    },
+    {
+      "question": "What is the primary advantage of the Parks-McClellan (`remez`) algorithm over the window method for FIR filter design?",
+      "options": [
+        "It always produces a stable filter.",
+        "It allows precise control over passband ripple and stopband attenuation, often yielding fewer taps.",
+        "It guarantees zero phase delay.",
+        "It is computationally faster to design."
+      ],
+      "correctIndex": 1,
+      "explanation": "The window method provides limited control over the exact ripple and attenuation (dictated by the window choice). The Parks-McClellan algorithm optimizes the coefficients to meet specific equiripple criteria in defined bands, usually resulting in a more efficient filter (fewer taps) for the same specs."
+    },
+    {
+      "question": "If you design a Type I FIR filter with 101 taps, what is its theoretical group delay?",
+      "options": [
+        "101 samples",
+        "100 samples",
+        "50 samples",
+        "0 samples"
+      ],
+      "correctIndex": 2,
+      "explanation": "For a linear phase FIR filter with N taps, the group delay is constant and equal to (N-1)/2 samples. For N=101, the delay is (101-1)/2 = 50 samples."
+    },
+    {
+      "question": "Which function should you use to apply an IIR filter in SOS format to a signal while ensuring zero phase distortion?",
+      "options": [
+        "`scipy.signal.lfilter`",
+        "`scipy.signal.sosfilt`",
+        "`scipy.signal.filtfilt`",
+        "`scipy.signal.sosfiltfilt`"
+      ],
+      "correctIndex": 3,
+      "explanation": "`sosfiltfilt` applies the SOS filter forward and backward, which cancels out the phase delay (zero phase distortion) and doubles the effective filter order. `filtfilt` is for `[b, a]` format, and `sosfilt` is causal (introduces delay)."
+    },
+    {
+      "question": "When using `scipy.signal.resample_poly(x, up, down)`, what does the function do internally to prevent aliasing/imaging?",
+      "options": [
+        "It applies a median filter.",
+        "It automatically designs and applies an FIR lowpass filter.",
+        "It relies on the user to pre-filter the signal.",
+        "It uses an IIR Butterworth filter."
+      ],
+      "correctIndex": 1,
+      "explanation": "`resample_poly` automatically designs an FIR lowpass filter (using the window method by default) and applies it efficiently within the polyphase resampling structure to prevent aliasing (when downsampling) and imaging (when upsampling)."
+    },
+    {
+      "question": "What is the default frequency unit for the `cutoff` parameter in `scipy.signal.firwin` if the `fs` parameter is NOT provided?",
+      "options": [
+        "Hertz (Hz)",
+        "Radians per second (rad/s)",
+        "Normalized frequency (0 to 1, where 1 is the Nyquist frequency)",
+        "Normalized frequency (0 to 1, where 1 is the sampling frequency)"
+      ],
+      "correctIndex": 2,
+      "explanation": "If `fs` is not specified, `firwin` (and most other filter design functions in scipy.signal) expects the cutoff frequency to be normalized to the Nyquist frequency (half the sample rate), so the valid range is 0 to 1."
+    }
+  ]
+}

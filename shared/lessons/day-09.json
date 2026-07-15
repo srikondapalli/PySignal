@@ -1,0 +1,155 @@
+{
+  "id": "day-09",
+  "day": 9,
+  "title": "Synchronization: Timing & Frequency Recovery",
+  "subtitle": "Master carrier frequency offset correction, timing recovery, and phase tracking for digital receivers.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Simulate and visualize the effects of carrier frequency offset (CFO) and timing offset on digital constellations.",
+    "Implement data-aided and blind CFO estimation algorithms (Schmidl-Cox, M-th power).",
+    "Design a Gardner timing error detector (TED) and loop filter for symbol timing recovery.",
+    "Build a complete burst receiver that performs frame synchronization, CFO correction, and phase tracking."
+  ],
+  "sections": [
+    {
+      "heading": "1. Why Synchronization Matters",
+      "content": "In a digital communication system, the receiver must perfectly align its local oscillators and sampling clocks with the incoming signal. Failure to do so results in several impairments:\n\n- **Carrier Frequency Offset (CFO):** Arises from mismatch between transmitter and receiver local oscillators, or Doppler shift. It causes a continuous phase rotation of the received symbols, spinning the constellation and leading to catastrophic decision errors.\n- **Phase Offset:** A static phase difference between the TX and RX carriers. It rotates the constellation by a fixed angle.\n- **Symbol Timing Offset (STO):** Occurs when the receiver samples the matched filter output at the wrong instant (not at the maximum eye opening), causing Inter-Symbol Interference (ISI).\n- **Sampling Clock Offset (SCO):** A frequency difference between TX and RX ADCs/DACs, causing the optimal sampling point to drift over time.\n\nIn this lesson, we will systematically address these impairments, moving from coarse acquisition (frame sync, coarse CFO) to fine tracking (timing recovery, phase-locked loops).",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": null
+    },
+    {
+      "heading": "2. Simulating and Visualizing CFO Effects",
+      "content": "Let's observe the effect of Carrier Frequency Offset (CFO) on a QPSK signal. A CFO of $\\Delta f$ introduces a time-varying phase shift $e^{j 2 \\pi \\Delta f t}$. In the discrete-time domain, if the sample rate is $F_s$, the phase rotation per sample is $2 \\pi \\Delta f / F_s$.\n\nWhen we plot the received constellation, instead of seeing four distinct points, we see a circle (or multiple rings if noise/ISI is present) because the symbols are continuously rotating. This makes it impossible to correctly slice the symbols without first estimating and removing the CFO.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# System parameters\nN_symbols = 1000\nfs = 1e6        # Sample rate (1 MHz)\nCFO = 5000      # 5 kHz frequency offset\n\n# Generate random QPSK symbols\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N_symbols) / np.sqrt(2)\n\n# Apply CFO\nt = np.arange(N_symbols) / fs\ncfo_phasor = np.exp(1j * 2 * np.pi * CFO * t)\nrx_symbols = symbols * cfo_phasor\n\n# Add AWGN\nnoise = (np.random.randn(N_symbols) + 1j * np.random.randn(N_symbols)) * 0.1\nrx_symbols += noise\n\n# Visualize\nplt.figure(figsize=(6, 6))\nplt.scatter(rx_symbols.real, rx_symbols.imag, alpha=0.5, s=10)\nplt.title('QPSK Constellation with 5 kHz CFO')\nplt.xlabel('In-Phase')\nplt.ylabel('Quadrature')\nplt.grid(True)\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "Simulating CFO on a QPSK Constellation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "3. Carrier Frequency Offset (CFO) Estimation",
+      "content": "CFO estimation can be divided into data-aided (using known preambles) and blind (using signal properties) methods.\n\n**Data-Aided (Moose / Schmidl-Cox):**\nIf the transmitter sends a preamble consisting of two identical halves (e.g., $[A, A]$), the receiver can correlate the first half with the second half. Since the second half is delayed by $N$ samples, the phase difference between them is exactly the phase accumulated due to CFO over $N$ samples: $\\Delta \\phi = 2 \\pi \\Delta f N / F_s$. We can estimate the CFO by taking the angle of the autocorrelation.\n\n**Blind (M-th Power for PSK):**\nFor an M-PSK signal, raising the signal to the $M$-th power strips away the data modulation. For QPSK ($M=4$), $(e^{j(\\pi/4 + k\\pi/2)})^4 = e^{j\\pi} = -1$. The only remaining phase variation is due to the CFO, multiplied by $M$. We can take the FFT of the $M$-th power signal to find the CFO peak, or use a phase discriminator.",
+      "code": "import numpy as np\n\n# 1. Data-Aided CFO Estimation (Moose algorithm)\n# Preamble: two identical halves of length N=64\nN = 64\nfs = 1e6\ntrue_cfo = 12500.0 # 12.5 kHz\n\npreamble_half = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\npreamble = np.concatenate([preamble_half, preamble_half])\n\n# Apply CFO and noise\nt = np.arange(2*N) / fs\nrx_preamble = preamble * np.exp(1j * 2 * np.pi * true_cfo * t)\nrx_preamble += (np.random.randn(2*N) + 1j * np.random.randn(2*N)) * 0.05\n\n# Estimate CFO\n# Correlate first half with second half\nR = np.sum(np.conj(rx_preamble[:N]) * rx_preamble[N:])\nestimated_cfo = np.angle(R) * fs / (2 * np.pi * N)\nprint(f\"Data-Aided Estimated CFO: {estimated_cfo:.1f} Hz (True: {true_cfo} Hz)\")\n\n# 2. Blind CFO Estimation (M-th Power for QPSK)\n# Generate QPSK symbols with CFO\nsyms = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], 1024) / np.sqrt(2)\nrx_syms = syms * np.exp(1j * 2 * np.pi * true_cfo * np.arange(1024) / fs)\n\n# M-th power (M=4 for QPSK)\nrx_4th = rx_syms**4\n\n# Find peak in FFT\nfft_size = 4096\nfrequencies = np.fft.fftfreq(fft_size, 1/fs)\nspectrum = np.abs(np.fft.fft(rx_4th, fft_size))\npeak_idx = np.argmax(spectrum)\nblind_cfo = frequencies[peak_idx] / 4  # Divide by M=4\nprint(f\"Blind Estimated CFO: {blind_cfo:.1f} Hz\")",
+      "codeTitle": "Data-Aided and Blind CFO Estimation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "4. Frame Synchronization via Cross-Correlation",
+      "content": "Before extracting data, the receiver must find the exact start of the packet. This is called frame synchronization. It is typically achieved by cross-correlating the incoming continuous sample stream with a known preamble sequence.\n\nBecause the received signal amplitude can vary, we use **normalized cross-correlation**. We compute the correlation magnitude squared and divide it by the moving energy of the received signal. When the preamble aligns perfectly, the normalized metric produces a sharp peak close to 1.0.\n\nWe apply a threshold (e.g., 0.7) to detect the presence of a packet, and then find the local maximum to pinpoint the exact sample index.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import lfilter\n\n# Generate a known preamble (e.g., Barker code or random QPSK)\npreamble = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], 64) / np.sqrt(2)\n\n# Create a received signal with noise and the preamble at a random offset\noffset = 345\nrx_signal = (np.random.randn(1000) + 1j * np.random.randn(1000)) * 0.5\nrx_signal[offset:offset+64] += preamble\n\n# Normalized Cross-Correlation\n# 1. Cross-correlation (using FIR filter approach)\n# Flip and conjugate preamble for lfilter\nh = np.conj(preamble[::-1])\ncorr = lfilter(h, 1, rx_signal)\n\n# 2. Moving energy of rx_signal\nrx_energy = lfilter(np.ones(64), 1, np.abs(rx_signal)**2)\npreamble_energy = np.sum(np.abs(preamble)**2)\n\n# 3. Normalized metric\nmetric = np.abs(corr)**2 / (rx_energy * preamble_energy + 1e-8)\n\n# Detect peak\nthreshold = 0.6\npeaks = np.where(metric > threshold)[0]\ndetected_offset = peaks[0] - 64 + 1 if len(peaks) > 0 else -1\n\nprint(f\"True offset: {offset}, Detected offset: {detected_offset}\")",
+      "codeTitle": "Normalized Cross-Correlation for Frame Sync",
+      "matlabComparison": "% MATLAB equivalent for normalized cross-correlation\nh = conj(flipud(preamble(:)));\ncorr = filter(h, 1, rx_signal);\nrx_energy = filter(ones(64,1), 1, abs(rx_signal).^2);\nmetric = abs(corr).^2 ./ (rx_energy * sum(abs(preamble).^2));\n[val, idx] = max(metric);\ndetected_offset = idx - 64;"
+    },
+    {
+      "heading": "5. Symbol Timing Recovery: The Gardner Loop",
+      "content": "Even if the sample rate is nominally correct, the receiver's ADC clock phase won't perfectly align with the optimal symbol sampling instants. We need a Timing Error Detector (TED) to measure this offset.\n\nThe **Gardner TED** is widely used because it works independently of carrier phase (it is non-data-aided and phase-blind). It requires 2 samples per symbol. For symbols $k$, the error is computed as:\n$e[k] = (y[k] - y[k-1]) \\times y[k-1/2]$\nwhere $y[k]$ and $y[k-1]$ are the current and previous symbol strobe samples, and $y[k-1/2]$ is the mid-point sample between them.\n\nThis error signal feeds a loop filter (a PI controller), which drives a polyphase interpolator or a numerically controlled oscillator (NCO) to adjust the fractional sampling instant, pulling the timing into perfect alignment.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import resample_poly\n\n# Simulate timing offset: 2 samples per symbol, but shifted\nsyms = np.random.choice([1, -1], 1000)\ntx_sig = np.zeros(2000)\ntx_sig[0::2] = syms\n# Simple channel (pulse shaping omitted for brevity, using simple delay)\nrx_sig = np.roll(tx_sig, 1) # 1 sample delay = half symbol offset\n\n# Gardner Loop Implementation\nN_syms = len(rx_sig) // 2\nout_syms = np.zeros(N_syms, dtype=complex)\n\n# Loop filter parameters\nKp = 0.1\nKi = 0.01\n\ntiming_error = 0\nloop_accum = 0\nmu = 0.0 # Fractional delay\n\n# In a real system, mu controls a polyphase interpolator.\n# Here we show the TED logic conceptually.\nerrors = []\nfor k in range(1, N_syms-1):\n    # Extract samples (assuming perfect interpolation for this conceptual demo)\n    # y_curr = interpolated sample at k\n    # y_mid = interpolated sample at k - 0.5\n    # y_prev = interpolated sample at k - 1\n    \n    # Mocking the samples for demonstration of the TED equation\n    y_curr = rx_sig[2*k]\n    y_mid = rx_sig[2*k - 1]\n    y_prev = rx_sig[2*k - 2]\n    \n    # Gardner TED (real part only for BPSK)\n    e = (np.sign(y_curr) - np.sign(y_prev)) * y_mid\n    errors.append(e)\n    \n    # Loop filter\n    loop_accum += e * Ki\n    mu_update = e * Kp + loop_accum\n    # mu would then update the interpolator for the next symbol",
+      "codeTitle": "Gardner TED Concept",
+      "matlabComparison": null
+    },
+    {
+      "heading": "6. Fine Phase Tracking with a Decision-Directed PLL",
+      "content": "After coarse CFO correction and timing recovery, a small residual frequency offset and phase noise will remain. This causes the constellation to slowly rotate over time.\n\nTo track and remove this, we use a **Decision-Directed Phase-Locked Loop (PLL)**. For each received symbol:\n1. We rotate the symbol by our current phase estimate.\n2. We \"slice\" (make a hard decision) to find the closest ideal constellation point.\n3. We measure the phase difference (error) between our rotated symbol and the ideal point.\n4. We feed this error through a Proportional-Integral (PI) loop filter to update our phase and frequency estimates for the next symbol.\n\nThis closed-loop system locks onto the carrier phase and tracks slow variations seamlessly.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Generate QPSK symbols with a small residual CFO and phase noise\nN = 1000\nsyms = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\nresidual_cfo_phase = 2 * np.pi * 0.005 * np.arange(N) # 0.005 rad/sample\nrx = syms * np.exp(1j * residual_cfo_phase) + (np.random.randn(N) + 1j*np.random.randn(N))*0.05\n\n# Decision-Directed PLL\nKp = 0.1\nKi = 0.005\n\nphase_est = 0.0\nfreq_est = 0.0\nout_syms = np.zeros(N, dtype=complex)\nphase_record = np.zeros(N)\n\nfor k in range(N):\n    # 1. Rotate by current phase estimate\n    sym_rot = rx[k] * np.exp(-1j * phase_est)\n    out_syms[k] = sym_rot\n    \n    # 2. Slicer (Decision)\n    dec_real = 1.0 if sym_rot.real > 0 else -1.0\n    dec_imag = 1.0 if sym_rot.imag > 0 else -1.0\n    decision = (dec_real + 1j * dec_imag) / np.sqrt(2)\n    \n    # 3. Phase Error Detector (cross product approximation for small angles)\n    # error = Im{sym_rot * conj(decision)}\n    error = sym_rot.imag * decision.real - sym_rot.real * decision.imag\n    \n    # 4. Loop Filter\n    freq_est += Ki * error\n    phase_est += Kp * error + freq_est\n    phase_record[k] = phase_est\n\nplt.figure(figsize=(10,4))\nplt.plot(residual_cfo_phase, label='True Phase')\nplt.plot(phase_record, label='PLL Estimated Phase')\nplt.legend()\nplt.title('PLL Phase Tracking')\nplt.show()",
+      "codeTitle": "Decision-Directed PLL for Phase Tracking",
+      "matlabComparison": null
+    },
+    {
+      "heading": "7. Complete Example: Burst Receiver",
+      "content": "Let's put it all together. A typical burst receiver pipeline operates as follows:\n\n1. **Energy Detection / AGC:** Detect the presence of a signal and adjust gain.\n2. **Frame Synchronization:** Continuously cross-correlate with the known preamble. When the normalized correlation exceeds a threshold, mark the start of the packet.\n3. **Coarse CFO Estimation:** Use the preamble (e.g., Schmidl-Cox) to estimate the fractional CFO and apply a complex exponential rotation to the entire packet to correct it.\n4. **Matched Filtering:** Pass the signal through a Root Raised Cosine (RRC) filter to maximize SNR and minimize ISI.\n5. **Timing Recovery:** Run the Gardner loop to interpolate the optimal sampling instants, downsampling to 1 sample per symbol.\n6. **Fine Phase Tracking:** Run the decision-directed PLL over the payload symbols to remove residual CFO and phase noise.\n7. **Demapping:** Slice the final symbols to bits.\n\nThis modular architecture is standard in modern software-defined radios (SDRs) and wireless modems.",
+      "code": "import numpy as np\n\ndef simple_burst_receiver(rx_signal, preamble, fs):\n    \"\"\"Conceptual pipeline for a burst receiver.\"\"\"\n    # 1. Frame Sync\n    h = np.conj(preamble[::-1])\n    corr = np.correlate(rx_signal, h, mode='valid')\n    start_idx = np.argmax(np.abs(corr))\n    packet = rx_signal[start_idx : start_idx + 1000]\n    \n    # 2. Coarse CFO (assuming preamble has 2 identical halves of length L)\n    L = len(preamble) // 2\n    R = np.sum(np.conj(packet[:L]) * packet[L:2*L])\n    cfo_est = np.angle(R) * fs / (2 * np.pi * L)\n    \n    # 3. CFO Correction\n    t = np.arange(len(packet)) / fs\n    packet_corrected = packet * np.exp(-1j * 2 * np.pi * cfo_est * t)\n    \n    # 4. Timing Recovery (Gardner) - omitted for brevity\n    symbols_timed = packet_corrected[::2] # Naive downsampling\n    \n    # 5. Phase Tracking (PLL)\n    # (Insert PLL code from previous section here)\n    \n    return symbols_timed\n\nprint(\"Burst receiver pipeline defined.\")",
+      "codeTitle": "Burst Receiver Pipeline Architecture",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Implement Moose CFO Estimation",
+      "prompt": "Write a function `estimate_cfo_moose(rx_signal, N, fs)` that takes a received signal containing a preamble with two identical halves of length `N`, and returns the estimated CFO in Hz. Test it with a simulated signal having a 2.5 kHz offset at a 100 kHz sample rate.",
+      "hint": "Remember to multiply the first half's conjugate by the second half, sum the results, take the angle, and scale by `fs / (2 * np.pi * N)`.",
+      "solution": "import numpy as np\n\ndef estimate_cfo_moose(rx_signal, N, fs):\n    first_half = rx_signal[:N]\n    second_half = rx_signal[N:2*N]\n    R = np.sum(np.conj(first_half) * second_half)\n    cfo = np.angle(R) * fs / (2 * np.pi * N)\n    return cfo\n\n# Test\nfs = 100e3\nN = 64\ntrue_cfo = 2500.0\npreamble_half = np.random.randn(N) + 1j*np.random.randn(N)\npreamble = np.concatenate([preamble_half, preamble_half])\nt = np.arange(2*N) / fs\nrx = preamble * np.exp(1j * 2 * np.pi * true_cfo * t)\n\nest_cfo = estimate_cfo_moose(rx, N, fs)\nprint(f\"Estimated CFO: {est_cfo:.2f} Hz\")",
+      "explanation": "The Moose algorithm relies on the fact that the second half of the preamble is identical to the first half, except it has been delayed by $N$ samples. During this delay, the CFO causes a phase rotation of $\\Delta \\phi = 2 \\pi \\Delta f N / F_s$. By computing the cross-correlation between the two halves, we extract this phase difference and solve for $\\Delta f$."
+    },
+    {
+      "title": "Exercise 2: Normalized Cross-Correlation",
+      "prompt": "Implement a frame synchronizer that finds the start index of a 32-symbol Barker-like preamble within a 10,000 sample received signal. Use normalized cross-correlation and a threshold of 0.8. Return the index where the preamble starts.",
+      "hint": "Use `scipy.signal.lfilter` with a moving average filter of ones to compute the local energy of the received signal efficiently.",
+      "solution": "import numpy as np\nfrom scipy.signal import lfilter\n\ndef find_preamble(rx_signal, preamble, threshold=0.8):\n    L = len(preamble)\n    # Cross-correlation\n    h = np.conj(preamble[::-1])\n    corr = lfilter(h, 1, rx_signal)\n    \n    # Moving energy\n    rx_energy = lfilter(np.ones(L), 1, np.abs(rx_signal)**2)\n    preamble_energy = np.sum(np.abs(preamble)**2)\n    \n    # Normalize\n    metric = np.abs(corr)**2 / (rx_energy * preamble_energy + 1e-10)\n    \n    # Find peaks\n    peaks = np.where(metric > threshold)[0]\n    if len(peaks) > 0:\n        # The peak occurs at the END of the preamble, so subtract L-1\n        return peaks[0] - L + 1\n    return -1\n\n# Test\npreamble = np.exp(1j * np.random.uniform(0, 2*np.pi, 32))\nrx = np.random.randn(10000) + 1j*np.random.randn(10000)\ntrue_idx = 4567\nrx[true_idx:true_idx+32] += preamble * 5 # High SNR for test\n\nidx = find_preamble(rx, preamble)\nprint(f\"Found at: {idx}, True: {true_idx}\")",
+      "explanation": "Normalized cross-correlation is essential because the received signal amplitude is unknown and variable. By dividing the squared correlation magnitude by the product of the signal energies, the metric is bounded between 0 and 1. Note that `lfilter` introduces a delay equal to the filter length, so the peak occurs at the last sample of the preamble."
+    },
+    {
+      "title": "Exercise 3: Decision-Directed PLL for BPSK",
+      "prompt": "Adapt the QPSK decision-directed PLL from the lesson to work for a BPSK signal. The BPSK symbols are +1 and -1. Track and remove a phase drift from a noisy received signal.",
+      "hint": "For BPSK, the slicer only needs to look at the real part of the rotated symbol. The phase error can be approximated by `sym_rot.imag * np.sign(sym_rot.real)`.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef bpsk_pll(rx_signal, Kp=0.1, Ki=0.005):\n    N = len(rx_signal)\n    out_syms = np.zeros(N, dtype=complex)\n    phase_est = 0.0\n    freq_est = 0.0\n    \n    for k in range(N):\n        # Rotate\n        sym_rot = rx_signal[k] * np.exp(-1j * phase_est)\n        out_syms[k] = sym_rot\n        \n        # Slice (BPSK: +1 or -1 on real axis)\n        decision = np.sign(sym_rot.real)\n        \n        # Error detector\n        error = sym_rot.imag * decision\n        \n        # Loop filter\n        freq_est += Ki * error\n        phase_est += Kp * error + freq_est\n        \n    return out_syms\n\n# Test\nsyms = np.random.choice([1, -1], 1000)\nphase_drift = np.linspace(0, 2*np.pi, 1000)\nrx = syms * np.exp(1j * phase_drift) + (np.random.randn(1000) + 1j*np.random.randn(1000))*0.1\n\nrecovered = bpsk_pll(rx)\nplt.scatter(recovered.real, recovered.imag, alpha=0.5)\nplt.title('Recovered BPSK Constellation')\nplt.show()",
+      "explanation": "In a BPSK PLL, the ideal symbols lie purely on the real axis. Any imaginary component in the rotated symbol represents a phase error. By multiplying the imaginary part by the sign of the real part (the decision), we get a directionally correct error signal that drives the loop filter to pull the phase back to zero."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is the primary visual effect of an uncorrected Carrier Frequency Offset (CFO) on a QPSK constellation plot?",
+      "options": [
+        "The constellation points shrink towards the origin.",
+        "The constellation points spread out horizontally.",
+        "The constellation points rotate continuously, forming a circle.",
+        "The constellation points split into eight distinct clusters."
+      ],
+      "correctIndex": 2,
+      "explanation": "CFO introduces a time-varying phase shift, which causes the received symbols to continuously rotate around the origin, creating a circular pattern on the I/Q plot."
+    },
+    {
+      "question": "In the Moose (data-aided) CFO estimation algorithm, what is the maximum observable phase difference before phase wrapping occurs?",
+      "options": [
+        "±π/2",
+        "±π",
+        "±2π",
+        "±4π"
+      ],
+      "correctIndex": 1,
+      "explanation": "The algorithm uses the angle of a complex number (`np.angle`), which is bounded between -π and +π. If the CFO causes a phase shift larger than ±π over the delay N, the estimate will alias (wrap around)."
+    },
+    {
+      "question": "Why is normalized cross-correlation preferred over standard cross-correlation for frame synchronization?",
+      "options": [
+        "It requires fewer computational resources.",
+        "It is independent of the received signal's amplitude fluctuations.",
+        "It automatically corrects for carrier frequency offset.",
+        "It works without knowing the preamble sequence."
+      ],
+      "correctIndex": 1,
+      "explanation": "Standard cross-correlation scales with the signal amplitude, making it hard to set a fixed detection threshold. Normalized cross-correlation divides by the signal energy, yielding a metric between 0 and 1 regardless of AGC variations."
+    },
+    {
+      "question": "What is a key advantage of the Gardner Timing Error Detector (TED)?",
+      "options": [
+        "It only requires 1 sample per symbol.",
+        "It is completely immune to noise.",
+        "It operates independently of carrier phase recovery.",
+        "It can estimate both timing and frequency offset simultaneously."
+      ],
+      "correctIndex": 2,
+      "explanation": "The Gardner TED is non-data-aided and phase-blind, meaning it can recover symbol timing even if the carrier phase is spinning (e.g., before the PLL has locked)."
+    },
+    {
+      "question": "In a decision-directed PLL, what is the purpose of the 'slicer'?",
+      "options": [
+        "To remove high-frequency noise from the loop filter.",
+        "To make a hard decision on which ideal constellation point was transmitted.",
+        "To interpolate the signal to a higher sample rate.",
+        "To divide the clock frequency by a fixed integer."
+      ],
+      "correctIndex": 1,
+      "explanation": "The slicer maps the received, phase-rotated symbol to the nearest valid constellation point. The PLL then uses the difference between the received symbol and this ideal decision to compute the phase error."
+    },
+    {
+      "question": "Which component in a phase-locked loop (PLL) is responsible for tracking a constant frequency offset (a phase ramp)?",
+      "options": [
+        "The proportional path (Kp) of the loop filter.",
+        "The integral path (Ki) of the loop filter.",
+        "The phase error detector.",
+        "The slicer."
+      ],
+      "correctIndex": 1,
+      "explanation": "The integral path (Ki) accumulates the phase error over time, allowing the loop to maintain a non-zero frequency estimate. Without the integral term, the PLL could not track a constant frequency offset without a steady-state phase error."
+    }
+  ]
+}

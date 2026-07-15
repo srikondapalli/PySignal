@@ -1,0 +1,149 @@
+{
+  "id": "day-03",
+  "day": 3,
+  "title": "Matplotlib & SciPy for Signal Engineers",
+  "subtitle": "Mastering publication-quality plots and essential SciPy toolkits for DSP.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Transition from MATLAB's plot state machine to Matplotlib's Object-Oriented API.",
+    "Create complex multi-panel figures (subplots) for signal analysis.",
+    "Visualize signals using spectrograms, constellations, and logarithmic axes.",
+    "Leverage scipy.signal for filtering and spectral estimation (welch, freqz).",
+    "Bridge Python and MATLAB using scipy.io.loadmat."
+  ],
+  "sections": [
+    {
+      "heading": "Matplotlib: The Figure/Axes API vs MATLAB's State Machine",
+      "content": "In MATLAB, plotting relies heavily on a state machine (`plot`, `title`, `xlabel`), which implicitly targets the 'current figure' and 'current axes'. While Matplotlib's `pyplot` module (`plt.plot()`) mimics this for quick scripts, professional Python code uses the **Object-Oriented (OO) API**.\n\nIn the OO API, you explicitly create a `Figure` object (the blank canvas) and one or more `Axes` objects (the actual plots with coordinates). This eliminates ambiguity when working with multiple plots. Instead of `title()`, you use `ax.set_title()`. Instead of `hold on`, Matplotlib overlays plots on the same `Axes` by default until you create a new one.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Generate a simple signal\nt = np.linspace(0, 1, 1000)\nx = np.sin(2 * np.pi * 10 * t) * np.exp(-3 * t)\n\n# Object-Oriented API approach\nfig, ax = plt.subplots(figsize=(8, 4))\nax.plot(t, x, label='Damped Sine', color='blue', linewidth=1.5)\n\n# Setting properties explicitly on the Axes object\nax.set_title('Time Domain Signal')\nax.set_xlabel('Time [s]')\nax.set_ylabel('Amplitude [V]')\nax.grid(True, linestyle='--', alpha=0.7)\nax.legend()\n\nplt.tight_layout()\nplt.show()",
+      "codeTitle": "Basic Plotting with the OO API",
+      "matlabComparison": "% MATLAB State Machine Approach\nt = linspace(0, 1, 1000);\nx = sin(2*pi*10*t) .* exp(-3*t);\n\nfigure;\nplot(t, x, 'b', 'LineWidth', 1.5);\ntitle('Time Domain Signal');\nxlabel('Time [s]');\nylabel('Amplitude [V]');\ngrid on;\nlegend('Damped Sine');"
+    },
+    {
+      "heading": "Subplots and Logarithmic Axes",
+      "content": "Signal processing frequently requires visualizing frequency responses using logarithmic scales (Bode plots). Matplotlib provides `ax.semilogx()`, `ax.semilogy()`, and `ax.loglog()` which directly mirror MATLAB's functions.\n\nTo create multiple plots in a single figure, `plt.subplots(nrows, ncols)` is the standard approach. It returns a NumPy array of `Axes` objects, allowing you to index them like a matrix (e.g., `axs[0, 1]`). This is much cleaner than MATLAB's `subplot(m, n, p)` which requires calculating the linear index `p`.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\n# Design a 4th-order Butterworth lowpass filter\nb, a = signal.butter(4, 0.2, 'low')\nw, h = signal.freqz(b, a, worN=1024)\nfreq = w / np.pi  # Normalized frequency (x pi rad/sample)\n\nfig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True)\n\n# Magnitude response (log x-axis, dB y-axis)\nax1.semilogx(freq, 20 * np.log10(np.abs(h)), color='b')\nax1.set_title('Butterworth Filter Frequency Response')\nax1.set_ylabel('Magnitude [dB]')\nax1.grid(True, which='both', linestyle=':')\nax1.set_ylim([-60, 5])\n\n# Phase response\nax2.semilogx(freq, np.unwrap(np.angle(h)), color='g')\nax2.set_ylabel('Phase [radians]')\nax2.set_xlabel('Normalized Frequency ($\\times \\pi$ rad/sample)')\nax2.grid(True, which='both', linestyle=':')\n\nplt.tight_layout()\nplt.show()",
+      "codeTitle": "Bode Plot using Subplots and semilogx",
+      "matlabComparison": "% MATLAB Subplot and semilogx\n[b, a] = butter(4, 0.2, 'low');\n[h, w] = freqz(b, a, 1024);\nfreq = w / pi;\n\nfigure;\nsubplot(2,1,1);\nsemilogx(freq, 20*log10(abs(h)), 'b');\ntitle('Butterworth Filter Frequency Response');\nylabel('Magnitude [dB]');\ngrid on; ylim([-60, 5]);\n\nsubplot(2,1,2);\nsemilogx(freq, unwrap(angle(h)), 'g');\nylabel('Phase [radians]');\nxlabel('Normalized Frequency (\\times \\pi rad/sample)');\ngrid on;"
+    },
+    {
+      "heading": "Constellation Scatter Plots and Spectrograms",
+      "content": "For digital communications, constellation diagrams are essential. While MATLAB has `scatterplot()`, in Matplotlib you simply use `ax.scatter(z.real, z.imag)`. Because Matplotlib doesn't natively plot complex arrays, you must explicitly extract the real and imaginary parts.\n\nFor time-frequency analysis, `ax.specgram()` computes and plots a spectrogram in one step, similar to MATLAB's `spectrogram(..., 'yaxis')`. It uses `matplotlib.mlab.specgram` under the hood, but for more control over the STFT data itself, you should use `scipy.signal.spectrogram` and plot it with `ax.pcolormesh()`.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Generate QPSK symbols with AWGN\nN = 1000\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\nnoise = (np.random.randn(N) + 1j * np.random.randn(N)) * 0.1\nrx_sig = symbols + noise\n\nfig, ax = plt.subplots(figsize=(5, 5))\n# Extract real (I) and imag (Q) parts for scatter plot\nax.scatter(rx_sig.real, rx_sig.imag, s=10, alpha=0.5, color='darkorange')\n\nax.set_title('QPSK Constellation')\nax.set_xlabel('In-Phase (I)')\nax.set_ylabel('Quadrature (Q)')\nax.axhline(0, color='black', linewidth=0.5)\nax.axvline(0, color='black', linewidth=0.5)\nax.grid(True, linestyle='--')\nax.set_xlim([-1.5, 1.5])\nax.set_ylim([-1.5, 1.5])\nax.set_aspect('equal') # Ensure square aspect ratio\n\nplt.show()",
+      "codeTitle": "QPSK Constellation Diagram",
+      "matlabComparison": "% MATLAB Constellation\nN = 1000;\nsymbols = (randi([0 1], N, 1)*2-1) + 1j*(randi([0 1], N, 1)*2-1);\nsymbols = symbols / sqrt(2);\nnoise = (randn(N,1) + 1j*randn(N,1)) * 0.1;\nrx_sig = symbols + noise;\n\nscatterplot(rx_sig);\ntitle('QPSK Constellation');\ngrid on;"
+    },
+    {
+      "heading": "SciPy Overview: scipy.signal and scipy.fft",
+      "content": "`scipy.signal` is the Python equivalent of MATLAB's Signal Processing Toolbox. It contains functions for filter design (`butter`, `firwin`), filtering (`lfilter`, `filtfilt`), and spectral analysis (`welch`, `periodogram`).\n\nFor FFTs, you have two choices: `numpy.fft` and `scipy.fft`. While both provide `fft`, `ifft`, and `fftshift`, `scipy.fft` is generally preferred in DSP because it is often compiled with faster backends (like pocketfft) and includes additional transforms like the Discrete Cosine Transform (DCT). Always remember that Python's FFT outputs are unshifted (DC at index 0), so `fftshift` is required to center the spectrum at 0 Hz, exactly like MATLAB.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\nfs = 1000.0\nt = np.arange(0, 2.0, 1/fs)\n# Signal: 50 Hz and 120 Hz sine waves + noise\nx = np.sin(2 * np.pi * 50 * t) + 0.5 * np.sin(2 * np.pi * 120 * t)\nx += np.random.randn(len(t)) * 0.5\n\n# Welch's method for PSD estimation\n# Equivalent to MATLAB: [Pxx, f] = pwelch(x, hanning(256), 128, 256, fs)\nf, Pxx = signal.welch(x, fs, window='hann', nperseg=256, noverlap=128, nfft=256)\n\nfig, ax = plt.subplots(figsize=(8, 4))\nax.semilogy(f, Pxx, color='purple')\nax.set_title(\"Welch's Power Spectral Density Estimate\")\nax.set_xlabel('Frequency [Hz]')\nax.set_ylabel('PSD [V**2/Hz]')\nax.grid(True)\nplt.show()",
+      "codeTitle": "PSD Estimation with scipy.signal.welch",
+      "matlabComparison": "% MATLAB Welch PSD\nfs = 1000;\nt = (0:1/fs:2-1/fs)';\nx = sin(2*pi*50*t) + 0.5*sin(2*pi*120*t) + randn(length(t),1)*0.5;\n\nfigure;\npwelch(x, hann(256), 128, 256, fs);\n% pwelch automatically plots in dB if no output arguments are provided"
+    },
+    {
+      "heading": "Bridging the Gap: scipy.io and scipy.constants",
+      "content": "When migrating from MATLAB, you often have legacy `.mat` files containing data or filter coefficients. `scipy.io.loadmat()` reads these files and returns a Python dictionary where the keys are the MATLAB variable names. Note that MATLAB arrays are loaded as NumPy arrays, but they often retain their 2D shape (e.g., a 1D MATLAB vector becomes a `(N, 1)` or `(1, N)` NumPy array), so you may need to use `.squeeze()` to flatten them.\n\n`scipy.constants` is a handy module providing physical constants. Instead of hardcoding the speed of light as `3e8`, you can use `scipy.constants.c`, which is exact and prevents magic numbers in your code.",
+      "code": "import numpy as np\nfrom scipy import io, constants\n\n# Example of using physical constants for RF calculations\nfreq_hz = 2.4e9  # 2.4 GHz WiFi\nwavelength = constants.c / freq_hz\nprint(f\"Wavelength at 2.4 GHz: {wavelength:.4f} meters\")\n\n# Boltzmann constant for thermal noise calculation (k * T * B)\nbandwidth = 20e6  # 20 MHz\ntemp_k = 290      # Standard noise temperature\nnoise_power_w = constants.k * temp_k * bandwidth\nnoise_power_dbm = 10 * np.log10(noise_power_w * 1000)\nprint(f\"Thermal noise power in 20 MHz: {noise_power_dbm:.2f} dBm\")\n\n# --- Loading MAT files (Conceptual) ---\n# data = io.loadmat('legacy_filter.mat')\n# coeffs = data['h'].squeeze() # Flatten to 1D array\n# print(f\"Loaded {len(coeffs)} filter taps.\")",
+      "codeTitle": "Using SciPy Constants and IO",
+      "matlabComparison": "% MATLAB Constants and IO\nc = physconst('LightSpeed');\nlambda = c / 2.4e9;\n\nk = physconst('Boltzmann');\nnoise_power_dbm = 10*log10(k * 290 * 20e6 * 1000);\n\n% Loading data\n% load('legacy_filter.mat', 'h');\n% h = squeeze(h);"
+    },
+    {
+      "heading": "The Signal Engineer Plotting Toolkit",
+      "content": "Let's combine everything into a comprehensive dashboard. A common requirement is to view a signal simultaneously in the time domain, frequency domain (PSD), time-frequency domain (spectrogram), and I/Q domain (constellation).\n\nWe will use `plt.subplots(2, 2)` to create a 2x2 grid. We'll generate a QPSK signal that undergoes a frequency hop, demonstrating how each plot reveals different aspects of the signal. This example serves as a template you can adapt for your own daily analysis tasks.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\n# 1. Generate Signal: QPSK with a frequency hop\nfs = 1e6\nt = np.arange(0, 1e-3, 1/fs)\nsyms = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], len(t)) / np.sqrt(2)\n# Frequency hop halfway through\nfc = np.where(t < 0.5e-3, 100e3, 300e3)\nrx = syms * np.exp(1j * 2 * np.pi * fc * t)\nrx += (np.random.randn(len(t)) + 1j*np.random.randn(len(t))) * 0.2\n\n# 2. Create 2x2 Dashboard\nfig, axs = plt.subplots(2, 2, figsize=(12, 8))\n\n# Top-Left: Time Domain (Real part)\naxs[0, 0].plot(t * 1e6, rx.real, alpha=0.8)\naxs[0, 0].set_title('Time Domain (I-Channel)')\naxs[0, 0].set_xlabel('Time [μs]')\naxs[0, 0].set_ylabel('Amplitude')\naxs[0, 0].grid(True)\n\n# Top-Right: Welch PSD\nf, Pxx = signal.welch(rx, fs, return_onesided=False, nperseg=256)\nf_shift = np.fft.fftshift(f)\nPxx_shift = np.fft.fftshift(Pxx)\naxs[0, 1].plot(f_shift / 1e3, 10 * np.log10(Pxx_shift))\naxs[0, 1].set_title('Power Spectral Density')\naxs[0, 1].set_xlabel('Frequency [kHz]')\naxs[0, 1].set_ylabel('PSD [dB/Hz]')\naxs[0, 1].grid(True)\n\n# Bottom-Left: Spectrogram\naxs[1, 0].specgram(rx, NFFT=64, Fs=fs, noverlap=32, cmap='viridis')\naxs[1, 0].set_title('Spectrogram')\naxs[1, 0].set_xlabel('Time [s]')\naxs[1, 0].set_ylabel('Frequency [Hz]')\n\n# Bottom-Right: Constellation\naxs[1, 1].scatter(rx.real, rx.imag, s=2, alpha=0.5, color='red')\naxs[1, 1].set_title('Constellation')\naxs[1, 1].set_xlabel('I')\naxs[1, 1].set_ylabel('Q')\naxs[1, 1].axhline(0, color='k', lw=0.5); axs[1, 1].axvline(0, color='k', lw=0.5)\naxs[1, 1].set_aspect('equal')\n\nplt.tight_layout()\nplt.show()",
+      "codeTitle": "The 2x2 Signal Analysis Dashboard",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Plotting a Filter Frequency Response",
+      "prompt": "Design a 3rd-order Chebyshev Type I lowpass filter with 1 dB of ripple and a cutoff frequency of 0.3 (normalized). Use `scipy.signal.cheby1` and `scipy.signal.freqz`. Plot its magnitude response in dB using `semilogx`. Ensure the x-axis represents normalized frequency (0 to 1, where 1 is Nyquist).",
+      "hint": "The `freqz` function returns frequencies in radians/sample (0 to pi). Divide by `np.pi` to get normalized frequency. Magnitude in dB is `20 * np.log10(np.abs(h))`.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\n# Design the filter\nb, a = signal.cheby1(N=3, rp=1, Wn=0.3, btype='low')\n\n# Compute frequency response\nw, h = signal.freqz(b, a, worN=1024)\nfreq_norm = w / np.pi  # Normalize to 0-1 (Nyquist)\n\n# Plot\nfig, ax = plt.subplots(figsize=(8, 4))\nax.semilogx(freq_norm, 20 * np.log10(np.abs(h)))\nax.set_title('Chebyshev Type I Lowpass Filter')\nax.set_xlabel('Normalized Frequency (x $\\pi$ rad/sample)')\nax.set_ylabel('Magnitude [dB]')\nax.grid(True, which='both', linestyle='--')\nax.set_ylim([-60, 5])\nplt.show()",
+      "explanation": "We use `signal.cheby1` to get the filter coefficients `b` and `a`. `signal.freqz` computes the complex frequency response `h` at angular frequencies `w`. We convert `w` to normalized frequency by dividing by $\\pi$, and convert `h` to dB using `20 * np.log10(np.abs(h))`. `semilogx` is used to plot the x-axis logarithmically, which is standard for filter Bode plots."
+    },
+    {
+      "title": "Constellation and EVM Highlighting",
+      "prompt": "Generate an array of 500 random 16-QAM symbols (values drawn from $\\pm 1, \\pm 3$ for both I and Q). Add complex Gaussian noise with a standard deviation of 0.3 per axis. Plot the constellation. Calculate the Error Vector Magnitude (EVM) for each received symbol relative to its ideal transmitted symbol. Highlight symbols with an EVM > 0.8 in red, and plot the rest in blue.",
+      "hint": "EVM for a symbol is simply the Euclidean distance between the received complex symbol and the ideal transmitted complex symbol: `np.abs(rx - tx)`. You can use boolean indexing to separate the arrays for plotting, or pass an array of colors to `ax.scatter(..., c=colors)`.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Generate 16-QAM symbols\nlevels = [-3, -1, 1, 3]\nN = 500\ntx_i = np.random.choice(levels, N)\ntx_q = np.random.choice(levels, N)\ntx_syms = tx_i + 1j * tx_q\n\n# Add noise\nnoise = np.random.randn(N) * 0.3 + 1j * np.random.randn(N) * 0.3\nrx_syms = tx_syms + noise\n\n# Calculate EVM (magnitude of the error vector)\nevm = np.abs(rx_syms - tx_syms)\n\n# Separate based on threshold\nthreshold = 0.8\nhigh_evm = rx_syms[evm > threshold]\nlow_evm = rx_syms[evm <= threshold]\n\n# Plot\nfig, ax = plt.subplots(figsize=(6, 6))\nax.scatter(low_evm.real, low_evm.imag, color='blue', label='EVM $\\le$ 0.8', alpha=0.7)\nax.scatter(high_evm.real, high_evm.imag, color='red', label='EVM > 0.8', alpha=0.9)\n\n# Plot ideal constellation points as black crosses\nI, Q = np.meshgrid(levels, levels)\nax.scatter(I.flatten(), Q.flatten(), color='black', marker='x', s=100, label='Ideal')\n\nax.set_title('16-QAM Constellation with EVM Highlighting')\nax.set_xlabel('In-Phase (I)')\nax.set_ylabel('Quadrature (Q)')\nax.grid(True, linestyle=':')\nax.legend()\nax.set_aspect('equal')\nplt.show()",
+      "explanation": "We generate the ideal 16-QAM symbols and add noise. The EVM is the absolute value (magnitude) of the complex difference between the received and transmitted symbols. We use boolean indexing (`evm > threshold`) to split the received symbols into two arrays, plotting them with different colors using two calls to `ax.scatter`. We also plot the ideal points as black crosses for reference."
+    },
+    {
+      "title": "Spectrogram of a Chirp Signal",
+      "prompt": "Generate a linear chirp signal that sweeps from 1 kHz to 10 kHz over 2 seconds, sampled at 44.1 kHz. Use `scipy.signal.chirp`. Plot its spectrogram using Matplotlib's `ax.specgram`. Configure the spectrogram to use an NFFT of 1024, a Hanning window, and 50% overlap. Add a colorbar to the plot.",
+      "hint": "The `scipy.signal.chirp` function takes `t`, `f0`, `t1`, and `f1`. For `ax.specgram`, the overlap parameter is `noverlap`, which should be half of `NFFT`. To add a colorbar, you can capture the return values of `specgram` (it returns a tuple, the last element is the image object) and pass it to `fig.colorbar()`, or simply call `plt.colorbar()` if it's the active axes.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy import signal\n\n# Parameters\nfs = 44100\nt = np.arange(0, 2.0, 1/fs)\n\n# Generate chirp: 1 kHz to 10 kHz over 2 seconds\nx = signal.chirp(t, f0=1000, f1=10000, t1=2.0, method='linear')\n\n# Plot spectrogram\nfig, ax = plt.subplots(figsize=(10, 5))\n# specgram returns (spectrum, freqs, t, im)\n_, _, _, im = ax.specgram(x, NFFT=1024, Fs=fs, window=np.hanning(1024), noverlap=512, cmap='magma')\n\nax.set_title('Spectrogram of Linear Chirp (1 kHz to 10 kHz)')\nax.set_xlabel('Time [s]')\nax.set_ylabel('Frequency [Hz]')\nax.set_ylim([0, 12000])  # Limit y-axis to relevant frequencies\n\n# Add colorbar\ncbar = fig.colorbar(im, ax=ax)\ncbar.set_label('Power/Frequency [dB/Hz]')\n\nplt.tight_layout()\nplt.show()",
+      "explanation": "We use `signal.chirp` to easily generate the swept-frequency signal. `ax.specgram` computes the Short-Time Fourier Transform (STFT) and plots it as an image. We specify `NFFT=1024` and `noverlap=512` (50% overlap). We pass a Hanning window explicitly. `specgram` returns four items; we capture the fourth (`im`, the `AxesImage` object) to pass to `fig.colorbar()` so the colorbar knows which colormap and scaling to use."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Which Matplotlib approach is recommended for building complex, multi-panel figures in professional Python code?",
+      "options": [
+        "The pyplot state machine (`plt.plot`, `plt.title`)",
+        "The Object-Oriented API (`fig, ax = plt.subplots()`)",
+        "The MATLAB compatibility module (`matplotlib.mlab`)",
+        "The Seaborn wrapper library"
+      ],
+      "correctIndex": 1,
+      "explanation": "The Object-Oriented (OO) API is recommended because it explicitly manages Figure and Axes objects, eliminating ambiguity about which plot is currently active, especially when working with subplots."
+    },
+    {
+      "question": "How do you create a 2x2 grid of subplots in Matplotlib?",
+      "options": [
+        "`fig, axs = plt.subplots(2, 2)`",
+        "`axs = plt.grid(2, 2)`",
+        "`fig = plt.figure(2, 2)`",
+        "`plt.subplot(4)`"
+      ],
+      "correctIndex": 0,
+      "explanation": "`plt.subplots(nrows, ncols)` creates a figure and a grid of subplots, returning the Figure object and a NumPy array of Axes objects."
+    },
+    {
+      "question": "Which SciPy function is the direct equivalent of MATLAB's `pwelch` for estimating Power Spectral Density?",
+      "options": [
+        "`scipy.fft.fft`",
+        "`scipy.signal.periodogram`",
+        "`scipy.signal.spectrogram`",
+        "`scipy.signal.welch`"
+      ],
+      "correctIndex": 3,
+      "explanation": "`scipy.signal.welch` implements Welch's method for PSD estimation, dividing the data into overlapping segments, computing the periodogram of each, and averaging them, exactly like MATLAB's `pwelch`."
+    },
+    {
+      "question": "When plotting a constellation diagram of complex symbols `z` in Matplotlib, which command is correct?",
+      "options": [
+        "`ax.plot(z)`",
+        "`ax.scatter(z)`",
+        "`ax.scatter(z.real, z.imag)`",
+        "`ax.complex_plot(z)`"
+      ],
+      "correctIndex": 2,
+      "explanation": "Unlike MATLAB's `scatterplot`, Matplotlib does not natively understand complex arrays for 2D plotting. You must explicitly pass the real part as the x-coordinates and the imaginary part as the y-coordinates."
+    },
+    {
+      "question": "What is a key advantage of using `scipy.fft` over `numpy.fft`?",
+      "options": [
+        "`scipy.fft` automatically shifts the zero-frequency component to the center.",
+        "`scipy.fft` is generally faster and includes additional transforms like the DCT.",
+        "`scipy.fft` can only process 1D arrays, making it simpler.",
+        "`scipy.fft` returns magnitude directly instead of complex numbers."
+      ],
+      "correctIndex": 1,
+      "explanation": "`scipy.fft` uses highly optimized backends (like pocketfft) making it faster than NumPy's implementation, and it provides a wider array of transforms including Discrete Cosine and Sine Transforms."
+    },
+    {
+      "question": "How do you load a legacy MATLAB `.mat` file into a Python dictionary?",
+      "options": [
+        "`numpy.load('file.mat')`",
+        "`scipy.io.loadmat('file.mat')`",
+        "`pandas.read_mat('file.mat')`",
+        "`json.load('file.mat')`"
+      ],
+      "correctIndex": 1,
+      "explanation": "`scipy.io.loadmat` reads MATLAB `.mat` files (up to v7.2) and returns a Python dictionary where the keys are the MATLAB variable names and the values are NumPy arrays."
+    }
+  ]
+}

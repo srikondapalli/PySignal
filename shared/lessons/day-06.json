@@ -1,0 +1,166 @@
+{
+  "id": "day-06",
+  "day": 6,
+  "title": "Digital Modulation: BPSK, QPSK & QAM",
+  "subtitle": "Master complex baseband representation, constellation generation, AWGN simulation, and BER/EVM analysis in Python.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Represent RF signals using complex baseband IQ notation in Python.",
+    "Generate and normalize BPSK, QPSK, and M-QAM constellations.",
+    "Implement Gray coding for symbol mapping to minimize bit errors.",
+    "Simulate AWGN channels and convert between Eb/N0 and SNR.",
+    "Build a vectorized Monte-Carlo BER simulation framework.",
+    "Calculate theoretical BER curves using the Q-function.",
+    "Perform hard-decision demapping using minimum Euclidean distance.",
+    "Measure Error Vector Magnitude (EVM) and relate it to SNR."
+  ],
+  "sections": [
+    {
+      "heading": "Complex Baseband Representation & IQ Signals",
+      "content": "In digital communications, simulating high-frequency RF passband signals directly requires extremely high sampling rates. To avoid this, we use the **complex baseband representation**. A passband signal $x(t) = I(t)\\cos(2\\pi f_c t) - Q(t)\\sin(2\\pi f_c t)$ can be completely described by its complex envelope $z(t) = I(t) + jQ(t)$. This allows us to simulate and analyze communication systems at the symbol rate rather than the carrier frequency.\n\nIn Python, we use the built-in `complex` type or NumPy's `complex128` arrays to represent these IQ signals. The real part corresponds to the In-phase (I) component, and the imaginary part corresponds to the Quadrature (Q) component. When plotting constellations, we plot the real part on the x-axis and the imaginary part on the y-axis.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Generate a simple QPSK symbol sequence\nN_symbols = 100\n# Random symbols from {1+1j, 1-1j, -1+1j, -1-1j}\nI = np.random.choice([-1, 1], size=N_symbols)\nQ = np.random.choice([-1, 1], size=N_symbols)\nsymbols = I + 1j * Q\n\n# Plot the constellation\nplt.figure(figsize=(5, 5))\nplt.scatter(symbols.real, symbols.imag, color='blue')\nplt.grid(True)\nplt.axhline(0, color='black', lw=1)\nplt.axvline(0, color='black', lw=1)\nplt.title('QPSK Constellation (Unnormalized)')\nplt.xlabel('In-phase (I)')\nplt.ylabel('Quadrature (Q)')\nplt.xlim(-2, 2)\nplt.ylim(-2, 2)\nplt.show()",
+      "codeTitle": "Basic IQ Signal Generation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Constellation Generation & Normalization",
+      "content": "To fairly compare different modulation schemes (e.g., QPSK vs. 16-QAM), we must normalize their constellations to have a **unit average symbol energy** ($E_s = 1$). For a constellation with $M$ points $S_i$, the average energy is $E_s = \\frac{1}{M} \\sum |S_i|^2$.\n\nFor BPSK ($\\pm 1$), $E_s$ is already 1. For unnormalized QPSK ($\\pm 1 \\pm j$), $E_s = 2$, so we divide all points by $\\sqrt{2}$. For 16-QAM with points at $\\pm 1, \\pm 3$ on both I and Q axes, the average energy is 10, so the normalization factor is $1/\\sqrt{10}$. For 64-QAM ($\\pm 1, \\pm 3, \\pm 5, \\pm 7$), the average energy is 42, requiring normalization by $1/\\sqrt{42}$. Normalization ensures that the transmitter power remains constant regardless of the modulation order.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef generate_qam_constellation(M):\n    \"\"\"Generate normalized square QAM constellation.\"\"\"\n    m = int(np.sqrt(M))\n    # Generate 1D PAM constellation: e.g., for M=16, m=4 -> [-3, -1, 1, 3]\n    pam = np.arange(-m+1, m, 2)\n    # Create 2D grid for I and Q\n    I, Q = np.meshgrid(pam, pam)\n    constellation = I.flatten() + 1j * Q.flatten()\n    \n    # Calculate average energy\n    E_s = np.mean(np.abs(constellation)**2)\n    # Normalize to unit average energy\n    constellation_norm = constellation / np.sqrt(E_s)\n    return constellation_norm, E_s\n\n# Generate 16-QAM\nqam16, es16 = generate_qam_constellation(16)\nprint(f\"16-QAM Unnormalized Average Energy: {es16}\")\n\nplt.figure(figsize=(5, 5))\nplt.scatter(qam16.real, qam16.imag, color='red')\nplt.grid(True)\nplt.title('Normalized 16-QAM Constellation')\nplt.xlabel('I')\nplt.ylabel('Q')\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "Normalized QAM Constellation Generation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Symbol Mapping & Gray Coding",
+      "content": "When mapping bits to constellation symbols, we use **Gray coding**. Gray coding ensures that adjacent constellation points differ by only one bit. This is crucial because the most likely errors in an AWGN channel occur when a symbol is mistaken for its nearest neighbor. With Gray coding, a single symbol error typically results in only a single bit error, minimizing the overall Bit Error Rate (BER).\n\nIn Python, we can generate Gray codes using bitwise operations. For a 1D PAM constellation, the Gray code for integer $k$ is `k ^ (k >> 1)`. For 2D QAM, we independently Gray-code the I and Q components and concatenate the resulting bits to form the complete symbol mapping.",
+      "code": "import numpy as np\n\ndef gray_code(n):\n    \"\"\"Generate Gray code sequence of length 2^n.\"\"\"\n    return [i ^ (i >> 1) for i in range(2**n)]\n\n# 16-QAM mapping (4 bits per symbol)\nM = 16\nk = int(np.log2(M))\nm = int(np.sqrt(M))\nk_1d = k // 2\n\n# 1D PAM points and Gray codes\npam = np.arange(-m+1, m, 2)\ngray_1d = gray_code(k_1d)\n\n# Create mapping dictionary (bits -> symbol)\nmapping = {}\nfor i, I_val in enumerate(pam):\n    for j, Q_val in enumerate(pam):\n        # Combine I and Q bits (I bits are MSBs, Q bits are LSBs)\n        bits = (gray_1d[i] << k_1d) | gray_1d[j]\n        symbol = I_val + 1j * Q_val\n        mapping[bits] = symbol\n\n# Print mapping for first few bit combinations\nfor bits in range(4):\n    sym = mapping[bits]\n    print(f\"Bits: {bits:04b} -> Symbol: {sym.real:+.0f}{sym.imag:+.0f}j\")",
+      "codeTitle": "Gray Code Mapping for 16-QAM",
+      "matlabComparison": null
+    },
+    {
+      "heading": "AWGN Channel and Eb/N0 vs SNR Conversion",
+      "content": "The Additive White Gaussian Noise (AWGN) channel adds complex Gaussian noise to the transmitted symbols. In digital communications, performance is typically evaluated against $E_b/N_0$ (energy per bit to noise power spectral density ratio) rather than SNR, allowing fair comparison between schemes with different spectral efficiencies.\n\nThe relationship is: $\\text{SNR} = \\frac{E_b}{N_0} \\times \\frac{k \\cdot R_s}{B}$, where $k$ is bits per symbol, $R_s$ is symbol rate, and $B$ is bandwidth. For baseband simulations with 1 sample per symbol, the bandwidth equals the symbol rate, simplifying to $\\text{SNR} = \\frac{E_b}{N_0} \\times k$. \n\nAssuming unit average symbol energy ($E_s = 1$), the signal power is 1, so the noise power (variance) is $N_0 = 1 / \\text{SNR}$. Since the noise is complex, this variance is split equally between the I and Q dimensions, meaning the variance per dimension is $N_0/2$.",
+      "code": "import numpy as np\n\ndef add_awgn(symbols, ebno_db, k):\n    \"\"\"Add AWGN to symbols given Eb/N0 in dB and bits per symbol k.\"\"\"\n    # Convert Eb/N0 from dB to linear\n    ebno_linear = 10**(ebno_db / 10)\n    \n    # Calculate SNR (assuming 1 sample per symbol)\n    snr_linear = ebno_linear * k\n    \n    # Calculate noise variance (assuming unit average symbol energy)\n    N0 = 1 / snr_linear\n    \n    # Generate complex Gaussian noise\n    # Variance is N0, so std dev per dimension is sqrt(N0/2)\n    noise_std = np.sqrt(N0 / 2)\n    noise = noise_std * (np.random.randn(len(symbols)) + \n                         1j * np.random.randn(len(symbols)))\n    \n    return symbols + noise\n\n# Example: QPSK (k=2) at Eb/N0 = 10 dB\nN = 1000\nqpsk_symbols = (np.random.choice([-1, 1], N) + \n                1j * np.random.choice([-1, 1], N)) / np.sqrt(2)\nrx_symbols = add_awgn(qpsk_symbols, 10, 2)",
+      "codeTitle": "AWGN Channel Simulation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Hard-Decision Demapping (Minimum Distance)",
+      "content": "At the receiver, **hard-decision demapping** assigns each received noisy symbol to the closest valid constellation point. This is fundamentally a minimum Euclidean distance problem. \n\nIn Python, we can vectorize this operation using NumPy broadcasting to compute the distance from all received symbols to all constellation points simultaneously, and then use `np.argmin` to find the closest point. This avoids slow Python `for` loops and is essential for processing millions of symbols efficiently in Monte-Carlo simulations.",
+      "code": "import numpy as np\n\ndef demap_symbols(rx_symbols, constellation):\n    \"\"\"Demap received symbols to nearest constellation points.\"\"\"\n    # Reshape for broadcasting: rx_symbols (N, 1), constellation (1, M)\n    rx_reshaped = rx_symbols[:, np.newaxis]\n    const_reshaped = constellation[np.newaxis, :]\n    \n    # Calculate squared Euclidean distance\n    distances = np.abs(rx_reshaped - const_reshaped)**2\n    \n    # Find index of minimum distance\n    min_indices = np.argmin(distances, axis=1)\n    \n    # Return demapped symbols and their indices\n    return constellation[min_indices], min_indices\n\n# Example usage\nconstellation = np.array([1+1j, 1-1j, -1+1j, -1-1j]) / np.sqrt(2)\nrx = np.array([0.8+1.2j, -0.5-0.9j])\ndemapped, indices = demap_symbols(rx, constellation)\nprint(f\"Received: {rx}\")\nprint(f\"Demapped: {demapped}\")",
+      "codeTitle": "Vectorized Minimum Distance Demapping",
+      "matlabComparison": "% MATLAB equivalent for minimum distance demapping\nrx_reshaped = rx(:); % Column vector\nconst_reshaped = constellation(:).'; % Row vector\ndistances = abs(rx_reshaped - const_reshaped).^2;\n[~, min_indices] = min(distances, [], 2);\ndemapped = constellation(min_indices);"
+    },
+    {
+      "heading": "Theoretical BER Curves & Q-function",
+      "content": "The theoretical Bit Error Rate (BER) for AWGN channels can be calculated using the **Q-function**, which represents the tail probability of the standard normal distribution. In Python, we implement the Q-function using `scipy.special.erfc` (the complementary error function).\n\nFor BPSK and QPSK (with Gray coding), the theoretical BER is exactly $Q(\\sqrt{2 E_b/N_0})$. For M-QAM, the exact BER is complex, but we can calculate the Symbol Error Rate (SER) and approximate the BER as $\\text{SER} / k$ (assuming Gray coding, where most symbol errors cause exactly one bit error). The Q-function is defined as $Q(x) = \\frac{1}{2} \\text{erfc}(x / \\sqrt{2})$.",
+      "code": "import numpy as np\nfrom scipy.special import erfc\nimport matplotlib.pyplot as plt\n\ndef q_func(x):\n    \"\"\"Calculate the Q-function using erfc.\"\"\"\n    return 0.5 * erfc(x / np.sqrt(2))\n\ndef theoretical_ber_qpsk(ebno_db):\n    \"\"\"Calculate theoretical BER for BPSK/QPSK.\"\"\"\n    ebno_linear = 10**(ebno_db / 10)\n    return q_func(np.sqrt(2 * ebno_linear))\n\nebno_db_range = np.arange(0, 11, 1)\nber_theory = theoretical_ber_qpsk(ebno_db_range)\n\nplt.figure(figsize=(6, 4))\nplt.semilogy(ebno_db_range, ber_theory, 'b-', label='Theoretical BPSK/QPSK')\nplt.grid(True, which='both')\nplt.xlabel('Eb/N0 (dB)')\nplt.ylabel('Bit Error Rate (BER)')\nplt.title('Theoretical BER Performance')\nplt.legend()\nplt.show()",
+      "codeTitle": "Theoretical BER Calculation",
+      "matlabComparison": "% MATLAB equivalent for Q-function\n% MATLAB has a built-in qfunc\nber_theory = qfunc(sqrt(2 * 10.^(ebno_db/10)));"
+    },
+    {
+      "heading": "Monte-Carlo BER Simulation Framework",
+      "content": "To verify our communication system design, we use **Monte-Carlo simulations**. The framework involves generating random bits, mapping them to symbols, adding AWGN, demapping the symbols, and counting the bit errors. \n\nTo ensure statistical confidence, we must simulate enough errors (typically at least 100 errors per $E_b/N_0$ point). Vectorization in NumPy is crucial here to simulate millions of symbols efficiently. For BPSK, the demapping can be simplified to a simple sign check (`> 0`), avoiding the full minimum distance calculation.",
+      "code": "import numpy as np\n\n# Simplified BPSK Monte-Carlo Simulation\nebno_db_range = np.arange(0, 11, 2)\nber_sim = np.zeros(len(ebno_db_range))\nN_bits = 100000\n\nfor i, ebno_db in enumerate(ebno_db_range):\n    # 1. Generate bits\n    tx_bits = np.random.randint(0, 2, N_bits)\n    \n    # 2. Map to BPSK symbols (-1 and 1)\n    tx_symbols = 2 * tx_bits - 1\n    \n    # 3. Add AWGN (k=1 for BPSK)\n    ebno_linear = 10**(ebno_db / 10)\n    N0 = 1 / ebno_linear\n    noise = np.sqrt(N0/2) * np.random.randn(N_bits)\n    rx_symbols = tx_symbols + noise\n    \n    # 4. Demap (Hard decision: > 0 is 1, < 0 is 0)\n    rx_bits = (rx_symbols > 0).astype(int)\n    \n    # 5. Count errors\n    errors = np.sum(tx_bits != rx_bits)\n    ber_sim[i] = errors / N_bits\n    print(f\"Eb/N0: {ebno_db} dB, Errors: {errors}, BER: {ber_sim[i]:.2e}\")",
+      "codeTitle": "Vectorized Monte-Carlo BER Simulation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "EVM Measurement & Relation to SNR",
+      "content": "Error Vector Magnitude (EVM) is a standard industry metric used to quantify the quality of a modulated signal. It measures the distance between the received symbols and the ideal constellation points. EVM is typically expressed as a percentage of the RMS amplitude of the ideal constellation.\n\nFor an AWGN channel, EVM is directly related to the SNR: $\\text{EVM}_{\\text{RMS}} \\approx 1 / \\sqrt{\\text{SNR}}$. In Python, we calculate EVM by taking the RMS of the error vectors (received minus ideal) divided by the RMS of the ideal symbols. This provides a quick way to estimate the SNR of a received signal in hardware setups.",
+      "code": "import numpy as np\n\ndef calculate_evm(rx_symbols, tx_symbols):\n    \"\"\"Calculate RMS EVM as a percentage.\"\"\"\n    # Error vector\n    error_vector = rx_symbols - tx_symbols\n    \n    # RMS of error vector\n    rms_error = np.sqrt(np.mean(np.abs(error_vector)**2))\n    \n    # RMS of ideal symbols\n    rms_ideal = np.sqrt(np.mean(np.abs(tx_symbols)**2))\n    \n    # EVM in percentage\n    evm_pct = (rms_error / rms_ideal) * 100\n    return evm_pct\n\n# Example: QPSK with 15 dB SNR\nN = 10000\ntx = (np.random.choice([-1, 1], N) + 1j * np.random.choice([-1, 1], N)) / np.sqrt(2)\nsnr_db = 15\nsnr_linear = 10**(snr_db / 10)\nnoise_var = 1 / snr_linear\nnoise = np.sqrt(noise_var/2) * (np.random.randn(N) + 1j * np.random.randn(N))\nrx = tx + noise\n\nevm = calculate_evm(rx, tx)\nexpected_evm = (1 / np.sqrt(snr_linear)) * 100\nprint(f\"Measured EVM: {evm:.2f}%\")\nprint(f\"Expected EVM from SNR: {expected_evm:.2f}%\")",
+      "codeTitle": "EVM Calculation",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Generate and Plot 64-QAM",
+      "prompt": "Write a Python script to generate a normalized 64-QAM constellation. Calculate its unnormalized average energy, normalize it, and plot the constellation points on a complex plane.",
+      "hint": "Use `np.arange(-7, 8, 2)` to generate the 1D PAM points for 64-QAM. The average energy is the mean of the squared absolute values of all points.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# 1. Generate 1D PAM points for 64-QAM (m=8)\npam = np.arange(-7, 8, 2)\n\n# 2. Create 2D grid\nI, Q = np.meshgrid(pam, pam)\nconstellation = I.flatten() + 1j * Q.flatten()\n\n# 3. Calculate average energy\nE_s = np.mean(np.abs(constellation)**2)\nprint(f\"Unnormalized Average Energy: {E_s}\")\n\n# 4. Normalize\nconstellation_norm = constellation / np.sqrt(E_s)\n\n# 5. Plot\nplt.figure(figsize=(6, 6))\nplt.scatter(constellation_norm.real, constellation_norm.imag, color='purple')\nplt.grid(True)\nplt.title('Normalized 64-QAM Constellation')\nplt.xlabel('In-phase (I)')\nplt.ylabel('Quadrature (Q)')\nplt.axis('equal')\nplt.show()",
+      "explanation": "We first generate the 1D PAM points `[-7, -5, -3, -1, 1, 3, 5, 7]`. Using `np.meshgrid`, we create all 64 combinations of I and Q. The unnormalized average energy is calculated as 42. We then divide all points by `np.sqrt(42)` to ensure the constellation has a unit average energy."
+    },
+    {
+      "title": "Theoretical BER for 16-QAM",
+      "prompt": "Implement a function to calculate the theoretical Symbol Error Rate (SER) and approximate Bit Error Rate (BER) for 16-QAM over an AWGN channel. Plot the BER curve for Eb/N0 from 0 to 15 dB.",
+      "hint": "For M-QAM, the SER is approximately $4(1 - 1/\\sqrt{M}) Q(\\sqrt{3 \\cdot \\text{SNR} / (M-1)})$. Remember that $\\text{SNR} = k \\cdot E_b/N_0$. The BER is approximately SER / k.",
+      "solution": "import numpy as np\nfrom scipy.special import erfc\nimport matplotlib.pyplot as plt\n\ndef q_func(x):\n    return 0.5 * erfc(x / np.sqrt(2))\n\ndef theoretical_ber_16qam(ebno_db):\n    M = 16\n    k = 4\n    ebno_linear = 10**(ebno_db / 10)\n    snr_linear = k * ebno_linear\n    \n    # Exact SER for square M-QAM\n    sqrt_M = np.sqrt(M)\n    p_sqrt_M = 2 * (1 - 1/sqrt_M) * q_func(np.sqrt(3 * snr_linear / (M - 1)))\n    ser = 1 - (1 - p_sqrt_M)**2\n    \n    # Approximate BER (assuming Gray coding)\n    ber = ser / k\n    return ber\n\nebno_db_range = np.arange(0, 16, 1)\nber_theory = theoretical_ber_16qam(ebno_db_range)\n\nplt.figure(figsize=(6, 4))\nplt.semilogy(ebno_db_range, ber_theory, 'r-', label='16-QAM Theory')\nplt.grid(True, which='both')\nplt.xlabel('Eb/N0 (dB)')\nplt.ylabel('Bit Error Rate (BER)')\nplt.title('Theoretical BER for 16-QAM')\nplt.legend()\nplt.show()",
+      "explanation": "The theoretical SER for square QAM is derived from the error probability of the underlying 1D PAM signals. We calculate the probability of error in one dimension (`p_sqrt_M`) and use it to find the 2D SER. With Gray coding, each symbol error typically causes only one bit error, so we approximate BER as SER divided by the number of bits per symbol ($k=4$)."
+    },
+    {
+      "title": "Complete QPSK Communication Chain",
+      "prompt": "Implement a complete QPSK Monte-Carlo simulation. Generate random bits, map them to QPSK symbols (with Gray coding), add AWGN for Eb/N0 = 6 dB, demap the symbols back to bits, and calculate the simulated BER. Compare it with the theoretical BER.",
+      "hint": "For QPSK, map pairs of bits to symbols. For example: 00 -> -1-1j, 01 -> -1+1j, 11 -> 1+1j, 10 -> 1-1j. Normalize by $\\sqrt{2}$. When demapping, you can check the signs of the real and imaginary parts to recover the bits.",
+      "solution": "import numpy as np\nfrom scipy.special import erfc\n\n# Parameters\nN_bits = 200000\nebno_db = 6\nk = 2 # QPSK\n\n# 1. Generate bits\ntx_bits = np.random.randint(0, 2, N_bits)\n\n# 2. Map to QPSK (Gray coded)\n# Reshape bits into pairs\nbit_pairs = tx_bits.reshape(-1, 2)\n# Map: 0 -> -1, 1 -> 1\nI = 2 * bit_pairs[:, 0] - 1\nQ = 2 * bit_pairs[:, 1] - 1\ntx_symbols = (I + 1j * Q) / np.sqrt(2)\n\n# 3. Add AWGN\nebno_linear = 10**(ebno_db / 10)\nsnr_linear = k * ebno_linear\nN0 = 1 / snr_linear\nnoise = np.sqrt(N0/2) * (np.random.randn(len(tx_symbols)) + 1j * np.random.randn(len(tx_symbols)))\nrx_symbols = tx_symbols + noise\n\n# 4. Demap symbols to bits\nrx_I_bits = (rx_symbols.real > 0).astype(int)\nrx_Q_bits = (rx_symbols.imag > 0).astype(int)\n# Reconstruct bit stream\nrx_bits = np.column_stack((rx_I_bits, rx_Q_bits)).flatten()\n\n# 5. Calculate BER\nerrors = np.sum(tx_bits != rx_bits)\nber_sim = errors / N_bits\n\n# 6. Theoretical BER\nber_theory = 0.5 * erfc(np.sqrt(ebno_linear))\n\nprint(f\"Simulated BER: {ber_sim:.2e}\")\nprint(f\"Theoretical BER: {ber_theory:.2e}\")",
+      "explanation": "This exercise builds a full QPSK chain. We group bits into pairs and map the first bit to the I channel and the second to the Q channel. This naturally creates a Gray-coded QPSK constellation. After adding noise, demapping is highly efficient: we simply check if the real and imaginary parts are greater than 0 to recover the original bits. The simulated BER closely matches the theoretical Q-function result."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is the average symbol energy of an unnormalized QPSK constellation with points at ($\\pm 1 \\pm j$)?",
+      "options": [
+        "1",
+        "2",
+        "$\\sqrt{2}$",
+        "4"
+      ],
+      "correctIndex": 1,
+      "explanation": "The energy of each point is $|\\pm 1 \\pm j|^2 = 1^2 + 1^2 = 2$. Since all points have the same energy, the average symbol energy is 2."
+    },
+    {
+      "question": "In a baseband simulation with 1 sample per symbol, what is the relationship between SNR and $E_b/N_0$?",
+      "options": [
+        "$\\text{SNR} = E_b/N_0$",
+        "$\\text{SNR} = E_b/N_0 \\times k$",
+        "$\\text{SNR} = E_b/N_0 / k$",
+        "$\\text{SNR} = E_b/N_0 + 10\\log_{10}(k)$"
+      ],
+      "correctIndex": 1,
+      "explanation": "The general formula is $\\text{SNR} = (E_b/N_0) \\times (k \\cdot R_s / B)$. With 1 sample per symbol, the bandwidth $B$ equals the symbol rate $R_s$, so the ratio $R_s/B$ is 1, leaving $\\text{SNR} = E_b/N_0 \\times k$."
+    },
+    {
+      "question": "Which SciPy function is used to calculate the theoretical BER for AWGN channels?",
+      "options": [
+        "`scipy.signal.lfilter`",
+        "`scipy.special.erfc`",
+        "`scipy.stats.norm`",
+        "`scipy.integrate.quad`"
+      ],
+      "correctIndex": 1,
+      "explanation": "The theoretical BER is calculated using the Q-function, which is implemented in Python using the complementary error function `scipy.special.erfc`."
+    },
+    {
+      "question": "Why is Gray coding used in symbol mapping?",
+      "options": [
+        "To increase the data rate",
+        "To minimize the number of bit errors for adjacent symbol errors",
+        "To reduce the peak-to-average power ratio (PAPR)",
+        "To simplify the constellation generation"
+      ],
+      "correctIndex": 1,
+      "explanation": "Gray coding ensures that adjacent constellation points differ by only one bit. When noise causes a symbol to be mistaken for its nearest neighbor, only one bit error occurs, minimizing the overall BER."
+    },
+    {
+      "question": "How is the complex noise variance $N_0$ related to the variance of the real and imaginary parts?",
+      "options": [
+        "$\\text{Var}(I) = \\text{Var}(Q) = N_0$",
+        "$\\text{Var}(I) = \\text{Var}(Q) = N_0/2$",
+        "$\\text{Var}(I) = \\text{Var}(Q) = 2N_0$",
+        "$\\text{Var}(I) = \\text{Var}(Q) = \\sqrt{N_0}$"
+      ],
+      "correctIndex": 1,
+      "explanation": "The total complex noise variance is $N_0$. Since the noise is circularly symmetric, this variance is split equally between the In-phase (real) and Quadrature (imaginary) dimensions, so each has a variance of $N_0/2$."
+    },
+    {
+      "question": "What does Error Vector Magnitude (EVM) measure?",
+      "options": [
+        "The ratio of signal power to noise power",
+        "The distance between received symbols and ideal constellation points",
+        "The bit error rate of the system",
+        "The bandwidth efficiency of the modulation scheme"
+      ],
+      "correctIndex": 1,
+      "explanation": "EVM measures the difference (error vector) between the actual received symbols and their ideal, noise-free constellation points, typically expressed as an RMS percentage."
+    }
+  ]
+}

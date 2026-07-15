@@ -1,0 +1,155 @@
+{
+  "id": "day-01",
+  "day": 1,
+  "title": "Python Essentials for MATLAB Users",
+  "subtitle": "Master the core syntax, data structures, and environment setup to transition smoothly from MATLAB to Python.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Understand the difference between Python environments (pip, venv, conda) and MATLAB's workspace.",
+    "Master Python's 0-based indexing, slicing, and core data types (lists, dicts, tuples).",
+    "Learn to write clean, reusable functions and understand the difference between scripts and modules.",
+    "Handle errors gracefully and format strings effectively using f-strings."
+  ],
+  "sections": [
+    {
+      "heading": "1. Environments: Workspaces vs. Namespaces",
+      "content": "In MATLAB, you have a single global workspace where all variables live. When you run a script, it pollutes this workspace. Python takes a different approach: it uses **namespaces** and **environments**. \n\nAn environment (managed by `venv` or `conda`) is an isolated container for your Python interpreter and installed packages (like NumPy or SciPy). This prevents version conflicts between different projects. \n\nWhen you run a Python script, it runs in its own namespace. Variables defined in a module (a `.py` file) don't automatically leak into your main workspace unless explicitly imported. This modularity is key to building scalable software.\n\nTo install packages, you use a package manager like `pip` or `conda`. For example, `pip install numpy scipy matplotlib` is the equivalent of buying MATLAB toolboxes, but free and open-source.",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": "% MATLAB: Everything is in the base workspace\nclear all; clc;\nx = 10; % x is now globally available\n\n% To manage toolboxes, you use the Add-On Explorer."
+    },
+    {
+      "heading": "2. Core Data Types: Cell Arrays and Structs vs. Lists and Dicts",
+      "content": "MATLAB relies heavily on matrices, cell arrays, and structs. Python has built-in types that serve similar purposes but are more flexible.\n\n- **Lists (`[]`)**: The equivalent of MATLAB's 1D cell arrays. They can hold mixed data types and are mutable (can be changed). Unlike MATLAB arrays, lists don't support element-wise math directly (that's what NumPy is for).\n- **Tuples (`()`)**: Like lists, but immutable (cannot be changed after creation). Often used for returning multiple values from a function.\n- **Dictionaries (`{}`)**: The equivalent of MATLAB structs or `containers.Map`. They store key-value pairs and are incredibly fast for lookups. Keys are usually strings, and values can be anything.\n\nPython also has `dataclasses` (introduced in Python 3.7) which provide a more structured alternative to dictionaries, similar to MATLAB classes but with less boilerplate.",
+      "code": "# Python Lists, Tuples, and Dicts\n\n# List (like a 1D cell array)\nmy_list = [1, 'hello', 3.14, [1, 2]]\nmy_list.append('new item') # Lists are mutable\n\n# Tuple (immutable)\nmy_tuple = (10, 20)\n# my_tuple[0] = 15 # This would raise an error!\n\n# Dictionary (like a struct)\nmy_dict = {\n    'frequency_hz': 2.4e9,\n    'modulation': 'QAM64',\n    'active': True\n}\n\n# Accessing dict values\nfc = my_dict['frequency_hz']\nmy_dict['power_dbm'] = 20 # Adding a new field",
+      "codeTitle": "Basic Data Structures in Python",
+      "matlabComparison": "% MATLAB equivalent\nmy_cell = {1, 'hello', 3.14, [1, 2]};\nmy_cell{end+1} = 'new item';\n\nmy_struct.frequency_hz = 2.4e9;\nmy_struct.modulation = 'QAM64';\nmy_struct.active = true;\n\nfc = my_struct.frequency_hz;\nmy_struct.power_dbm = 20;"
+    },
+    {
+      "heading": "3. Indexing and Slicing: 1-Based vs. 0-Based",
+      "content": "This is the biggest hurdle for MATLAB users: **Python is 0-indexed**. The first element is at index 0, not 1.\n\nFurthermore, when slicing in Python `[start:stop:step]`, the `stop` index is **exclusive**. This means `x[0:3]` returns elements at indices 0, 1, and 2. It does NOT include index 3. This design makes it easy to calculate the length of a slice: `stop - start`.\n\nTo access the last element, MATLAB uses the `end` keyword. Python uses negative indexing: `-1` is the last element, `-2` is the second to last, and so on. To slice to the end of a list, you simply omit the `stop` index: `x[2:]`.",
+      "code": "data = [10, 20, 30, 40, 50, 60]\n\n# Accessing elements\nfirst_element = data[0]  # 10\nlast_element = data[-1]  # 60\n\n# Slicing [start:stop:step]\nfirst_three = data[0:3]  # [10, 20, 30] (indices 0, 1, 2)\nevery_other = data[0::2] # [10, 30, 50] (step of 2)\n\n# Reversing a list\nreversed_data = data[::-1] # [60, 50, 40, 30, 20, 10]\n\n# Slicing to the end\nfrom_third_to_end = data[2:] # [30, 40, 50, 60]",
+      "codeTitle": "0-Based Indexing and Slicing",
+      "matlabComparison": "% MATLAB equivalent\ndata = [10, 20, 30, 40, 50, 60];\n\nfirst_element = data(1);\nlast_element = data(end);\n\nfirst_three = data(1:3);\nevery_other = data(1:2:end);\n\nreversed_data = data(end:-1:1);\n\nfrom_third_to_end = data(3:end);"
+    },
+    {
+      "heading": "4. String Formatting: f-strings",
+      "content": "In MATLAB, you often use `sprintf` or `disp` with string concatenation to format output. Python 3.6 introduced **f-strings** (formatted string literals), which are cleaner and more readable.\n\nBy prefixing a string with `f`, you can embed Python expressions directly inside curly braces `{}`. You can also include format specifiers inside the braces, similar to `sprintf`.\n\nFor example, `{value:.2f}` formats a float to 2 decimal places, and `{value:e}` formats it in scientific notation. This is incredibly useful for logging simulation results or printing debug information.",
+      "code": "snr_db = 15.432\nber = 1.2e-5\nmodulation = \"QPSK\"\n\n# Using f-strings for clean output\nprint(f\"Simulation Results:\")\nprint(f\"Modulation: {modulation}\")\n\n# Formatting numbers: .2f for 2 decimal places\nprint(f\"SNR: {snr_db:.2f} dB\")\n\n# Formatting numbers: .2e for scientific notation\nprint(f\"BER: {ber:.2e}\")\n\n# You can even do math inside the braces\nprint(f\"Linear SNR: {10**(snr_db/10):.1f}\")",
+      "codeTitle": "Using f-strings for Output",
+      "matlabComparison": "% MATLAB equivalent\nsnr_db = 15.432;\nber = 1.2e-5;\nmodulation = 'QPSK';\n\nfprintf('Simulation Results:\\n');\nfprintf('Modulation: %s\\n', modulation);\nfprintf('SNR: %.2f dB\\n', snr_db);\nfprintf('BER: %.2e\\n', ber);\nfprintf('Linear SNR: %.1f\\n', 10^(snr_db/10));"
+    },
+    {
+      "heading": "5. Functions: Scripts vs. Modules",
+      "content": "In MATLAB, a function must be in a file with the same name, and scripts are just sequences of commands. In Python, any `.py` file is a **module**. A module can contain multiple functions, classes, and variables.\n\nPython functions are defined using the `def` keyword. They use indentation (usually 4 spaces) to define the function body, rather than an `end` keyword.\n\nPython functions can return multiple values by packing them into a tuple. When calling the function, you can unpack the tuple into separate variables. \n\nA common pattern in Python is the `if __name__ == \"__main__\":` block. This allows a file to be both imported as a module (without running the script part) and run directly as a script.",
+      "code": "import math\n\ndef calculate_link_budget(tx_power_dbm, path_loss_db, rx_gain_db=0):\n    \"\"\"\n    Calculates the received power and linear power in mW.\n    rx_gain_db is an optional parameter with a default value of 0.\n    \"\"\"\n    rx_power_dbm = tx_power_dbm - path_loss_db + rx_gain_db\n    rx_power_mw = 10 ** (rx_power_dbm / 10)\n    \n    # Returning multiple values as a tuple\n    return rx_power_dbm, rx_power_mw\n\n# This block only runs if the script is executed directly\nif __name__ == \"__main__\":\n    # Unpacking the returned tuple\n    p_dbm, p_mw = calculate_link_budget(tx_power_dbm=20, path_loss_db=100, rx_gain_db=5)\n    print(f\"Received Power: {p_dbm} dBm ({p_mw:.2e} mW)\")",
+      "codeTitle": "Defining and Calling Functions",
+      "matlabComparison": "% MATLAB equivalent (must be in calculate_link_budget.m)\nfunction [rx_power_dbm, rx_power_mw] = calculate_link_budget(tx_power_dbm, path_loss_db, rx_gain_db)\n    if nargin < 3\n        rx_gain_db = 0;\n    end\n    rx_power_dbm = tx_power_dbm - path_loss_db + rx_gain_db;\n    rx_power_mw = 10 ^ (rx_power_dbm / 10);\nend"
+    },
+    {
+      "heading": "6. Error Handling: Try/Except",
+      "content": "MATLAB uses `try...catch` blocks. Python uses `try...except`. \n\nIn Python, it's considered good practice to catch specific exceptions rather than a generic catch-all. For example, if you're trying to open a file, you should catch `FileNotFoundError`. If you're doing math, you might catch `ZeroDivisionError` or `ValueError`.\n\nYou can also use the `finally` block to execute code regardless of whether an exception occurred (useful for closing files or releasing resources), and the `else` block to execute code only if NO exception occurred.\n\nPython encourages the \"Easier to Ask for Forgiveness than Permission\" (EAFP) style: just try the operation and catch the error if it fails, rather than checking all conditions beforehand.",
+      "code": "def safe_divide(a, b):\n    \"\"\"Divides a by b, handling division by zero.\"\"\"\n    try:\n        result = a / b\n    except ZeroDivisionError:\n        print(\"Error: Cannot divide by zero!\")\n        return None\n    except TypeError:\n        print(\"Error: Inputs must be numbers.\")\n        return None\n    else:\n        # Runs only if no exception occurred\n        print(\"Division successful.\")\n        return result\n    finally:\n        # Always runs\n        print(\"Execution complete.\")\n\n# Test cases\nprint(f\"Result: {safe_divide(10, 2)}\\n\")\nprint(f\"Result: {safe_divide(10, 0)}\\n\")\nprint(f\"Result: {safe_divide(10, 'a')}\\n\")",
+      "codeTitle": "Handling Exceptions in Python",
+      "matlabComparison": "% MATLAB equivalent\ntry\n    result = a / b;\ncatch ME\n    if strcmp(ME.identifier, 'MATLAB:divideByZero')\n        disp('Error: Cannot divide by zero!');\n    else\n        disp(['Error: ', ME.message]);\n    end\nend"
+    },
+    {
+      "heading": "7. Summary: The Pythonic Way",
+      "content": "Transitioning from MATLAB to Python isn't just about learning new syntax; it's about adopting a new mindset. \n\nMATLAB is highly optimized for matrix operations out-of-the-box. Python is a general-purpose language. To get MATLAB-like performance for DSP, you MUST use libraries like NumPy and SciPy (which we will cover in Day 2). \n\nAvoid writing `for` loops to iterate over arrays in Python; it will be painfully slow. Instead, use vectorized operations provided by NumPy. \n\nEmbrace Python's modularity. Break your code into small, reusable functions and modules. Use dictionaries for structured data, and leverage f-strings for clean logging. Remember that indexing starts at 0, and slicing is exclusive at the end.",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: List Slicing and Indexing",
+      "prompt": "You are given a list representing a received signal's power in dBm over 10 time slots: `rx_power = [-80, -78, -75, -70, -65, -68, -72, -79, -82, -85]`. \n\n1. Extract the first 3 samples.\n2. Extract the last 3 samples using negative indexing.\n3. Extract every second sample starting from index 1.\n4. Reverse the entire list.",
+      "hint": "Remember that `[start:stop:step]` is exclusive of `stop`. Negative indices count from the end, where `-1` is the last element.",
+      "solution": "rx_power = [-80, -78, -75, -70, -65, -68, -72, -79, -82, -85]\n\n# 1. First 3 samples (indices 0, 1, 2)\nfirst_three = rx_power[0:3]\nprint(f\"First 3: {first_three}\")\n\n# 2. Last 3 samples\nlast_three = rx_power[-3:]\nprint(f\"Last 3: {last_three}\")\n\n# 3. Every second sample starting from index 1\nevery_second = rx_power[1::2]\nprint(f\"Every second (from idx 1): {every_second}\")\n\n# 4. Reverse the list\nreversed_power = rx_power[::-1]\nprint(f\"Reversed: {reversed_power}\")",
+      "explanation": "Slicing is a powerful feature in Python. `rx_power[0:3]` gets indices 0, 1, and 2. `rx_power[-3:]` starts at the 3rd to last element and goes to the end. `rx_power[1::2]` starts at index 1 and takes steps of 2. `rx_power[::-1]` uses a negative step to traverse the list backwards."
+    },
+    {
+      "title": "Exercise 2: Dictionaries and f-strings",
+      "prompt": "Create a dictionary named `system_params` with the following keys and values:\n- `bandwidth_mhz`: 20\n- `carrier_freq_ghz`: 5.8\n- `tx_antennas`: 4\n- `rx_antennas`: 4\n\nThen, write a function `print_system_info(params)` that takes this dictionary as input and uses f-strings to print a formatted summary. Add a new key `mimo_config` to the dictionary inside the function (e.g., '4x4') and print it.",
+      "hint": "Access dictionary values using `params['key']`. You can embed these directly inside f-strings like `f\"{params['key']}\"`.",
+      "solution": "system_params = {\n    'bandwidth_mhz': 20,\n    'carrier_freq_ghz': 5.8,\n    'tx_antennas': 4,\n    'rx_antennas': 4\n}\n\ndef print_system_info(params):\n    # Add a new key for MIMO configuration\n    tx = params['tx_antennas']\n    rx = params['rx_antennas']\n    params['mimo_config'] = f\"{tx}x{rx}\"\n    \n    # Print formatted summary\n    print(\"--- System Configuration ---\")\n    print(f\"Carrier Frequency: {params['carrier_freq_ghz']:.2f} GHz\")\n    print(f\"Bandwidth:         {params['bandwidth_mhz']} MHz\")\n    print(f\"MIMO Setup:        {params['mimo_config']}\")\n\n# Call the function\nprint_system_info(system_params)",
+      "explanation": "Dictionaries are ideal for storing configuration parameters. We pass the dictionary to the function, extract the antenna counts to create a new `mimo_config` string, store it back in the dictionary, and use f-strings to format the output cleanly. The `:.2f` ensures the frequency is printed with two decimal places."
+    },
+    {
+      "title": "Exercise 3: Error Handling in a Conversion Function",
+      "prompt": "Write a function `dbm_to_mw(dbm_value)` that converts a power value from dBm to milliwatts using the formula: `mW = 10^(dBm/10)`. \n\nUse a `try...except` block to handle cases where the input is not a number (e.g., a string). If a `TypeError` occurs, print an error message and return `None`. Test your function with inputs `20`, `0`, and `\"high\"`.",
+      "hint": "The exponentiation operator in Python is `**`, not `^` (which is bitwise XOR). Catch `TypeError` for invalid input types.",
+      "solution": "def dbm_to_mw(dbm_value):\n    \"\"\"Converts power from dBm to milliwatts.\"\"\"\n    try:\n        # In Python, exponentiation is **, not ^\n        mw_value = 10 ** (dbm_value / 10)\n        return mw_value\n    except TypeError:\n        print(f\"Error: Invalid input type '{type(dbm_value).__name__}'. Expected a number.\")\n        return None\n\n# Test cases\ntest_values = [20, 0, \"high\"]\n\nfor val in test_values:\n    result = dbm_to_mw(val)\n    if result is not None:\n        print(f\"{val} dBm = {result:.2f} mW\")",
+      "explanation": "The function attempts the math operation. If `dbm_value` is a string like `\"high\"`, the division `dbm_value / 10` will raise a `TypeError`. The `except` block catches this specific error, prints a helpful message using an f-string and `type()`, and gracefully returns `None` instead of crashing the program."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Which of the following is the correct way to extract the last element of a list `x` in Python?",
+      "options": [
+        "x[end]",
+        "x[-1]",
+        "x(end)",
+        "x[length(x)]"
+      ],
+      "correctIndex": 1,
+      "explanation": "Python uses negative indexing to access elements from the end of a list. `-1` refers to the last element. `end` is used in MATLAB, not Python."
+    },
+    {
+      "question": "What is the output of the following slice operation: `[10, 20, 30, 40, 50][1:3]`?",
+      "options": [
+        "[10, 20, 30]",
+        "[20, 30, 40]",
+        "[20, 30]",
+        "[10, 20]"
+      ],
+      "correctIndex": 2,
+      "explanation": "Python slicing `[start:stop]` is inclusive of `start` (index 1 is 20) and exclusive of `stop` (index 3 is 40, so it stops at index 2, which is 30). Thus, it returns `[20, 30]`."
+    },
+    {
+      "question": "Which Python data structure is most equivalent to a MATLAB struct for storing named fields?",
+      "options": [
+        "List",
+        "Tuple",
+        "Dictionary",
+        "Set"
+      ],
+      "correctIndex": 2,
+      "explanation": "A Dictionary (`dict`) stores key-value pairs, making it the direct equivalent of a MATLAB struct where fields are accessed by name."
+    },
+    {
+      "question": "How do you correctly format a float variable `snr` to 1 decimal place using an f-string?",
+      "options": [
+        "f\"SNR: {snr:1f}\"",
+        "f\"SNR: {snr.1f}\"",
+        "f\"SNR: {snr:.1f}\"",
+        "f\"SNR: %1f\" % snr"
+      ],
+      "correctIndex": 2,
+      "explanation": "Inside an f-string, format specifiers follow a colon `:`. The `.1f` specifies a float with 1 decimal place."
+    },
+    {
+      "question": "What is the primary difference between a Python script and a Python module?",
+      "options": [
+        "Scripts end in .py, modules end in .mod",
+        "Modules cannot contain executable code",
+        "There is no fundamental difference; any .py file can be imported as a module or run as a script",
+        "Scripts must contain a main() function"
+      ],
+      "correctIndex": 2,
+      "explanation": "In Python, any `.py` file is a module and can be imported by other files. It can also be executed directly as a script. The `if __name__ == \"__main__\":` block is often used to separate code that should only run when executed as a script."
+    },
+    {
+      "question": "Which keyword is used to catch exceptions in Python?",
+      "options": [
+        "catch",
+        "except",
+        "error",
+        "handle"
+      ],
+      "correctIndex": 1,
+      "explanation": "Python uses `try...except` blocks for error handling, whereas MATLAB uses `try...catch`."
+    }
+  ]
+}

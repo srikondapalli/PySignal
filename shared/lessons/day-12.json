@@ -1,0 +1,155 @@
+{
+  "id": "day-12",
+  "day": 12,
+  "title": "Link Budget Analysis",
+  "subtitle": "Master dB arithmetic, noise figures, and end-to-end link budgets for wireless systems.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Perform fluent dB arithmetic (dBm, dBW, dBi, dBc) and understand power vs. voltage scaling.",
+    "Calculate Free-Space Path Loss (FSPL) and understand frequency/distance scaling.",
+    "Compute receiver noise floor, cascaded noise figure (Friis formula), and G/T.",
+    "Implement a reusable Python LinkBudget class to generate waterfall tables and margin curves."
+  ],
+  "sections": [
+    {
+      "heading": "1. The Decibel (dB) and Power Arithmetic",
+      "content": "In RF and wireless engineering, the dynamic range of signals spans many orders of magnitude. A transmitter might output 10 Watts, while a receiver might successfully decode a signal of 10^-13 Watts. To manage this, we use the decibel (dB) scale, a logarithmic unit. \n\nAbsolute power is typically referenced to 1 milliwatt (dBm) or 1 Watt (dBW). \nPower in dBm = 10 * log10(Power in mW)\nPower in dBW = 10 * log10(Power in W)\n\nRelative values like antenna gain (dBi, relative to an isotropic radiator) or cable loss (dB) are added or subtracted. \n\nKey rules of thumb:\n- +3 dB doubles the power.\n- +10 dB increases power by a factor of 10.\n- 0 dBm = 1 mW, 30 dBm = 1 W, 0 dBW = 30 dBm.\n\nWhen working with voltages, the multiplier is 20 instead of 10 (since Power is proportional to Voltage squared). In Python, we frequently convert between linear and logarithmic scales using `numpy`.",
+      "code": "import numpy as np\n\ndef lin2db(x):\n    \"\"\"Convert linear power to dB.\"\"\"\n    return 10 * np.log10(x)\n\ndef db2lin(x):\n    \"\"\"Convert dB to linear power.\"\"\"\n    return 10 ** (x / 10)\n\n# Examples\npower_mW = 50\npower_dBm = lin2db(power_mW)\nprint(f\"{power_mW} mW is {power_dBm:.2f} dBm\")\n\n# Adding gains and losses in dB\ntx_power_dBm = 30.0 # 1 Watt\ntx_gain_dBi = 5.0\ncable_loss_dB = 2.0\n\n# EIRP (Effective Isotropic Radiated Power)\neirp_dBm = tx_power_dBm + tx_gain_dBi - cable_loss_dB\nprint(f\"EIRP: {eirp_dBm:.2f} dBm ({db2lin(eirp_dBm):.2f} mW)\")",
+      "codeTitle": "dB Conversion Utilities",
+      "matlabComparison": "function y = lin2db(x)\n    y = 10 * log10(x);\nend\n% MATLAB also has built-in db() and mag2db() / pow2db() in the Signal Processing Toolbox."
+    },
+    {
+      "heading": "2. Free-Space Path Loss (FSPL) and Friis Transmission Equation",
+      "content": "As an electromagnetic wave propagates through free space, its power density decreases as the surface area of the expanding sphere increases (inverse-square law). The Free-Space Path Loss (FSPL) represents this geometric spreading.\n\nFSPL = (4 * π * d / λ)²\nWhere:\n- d is the distance between Tx and Rx\n- λ is the wavelength (c / f)\n\nIn dB, this becomes:\nFSPL(dB) = 20 * log10(d) + 20 * log10(f) + 20 * log10(4π/c)\n\nIf d is in km and f is in MHz, the constant 20 * log10(4π/c) is approximately 32.44.\nFSPL(dB) = 32.44 + 20 * log10(d_km) + 20 * log10(f_MHz)\n\nThe Friis Transmission Equation gives the received power (Pr) under ideal free-space conditions:\nPr(dBm) = Pt(dBm) + Gt(dBi) + Gr(dBi) - FSPL(dB)\n\nNotice that FSPL increases by 6 dB if you double the distance, and also increases by 6 dB if you double the frequency. This frequency dependence in FSPL is actually due to the receiving antenna's effective aperture shrinking at higher frequencies for a given gain.",
+      "code": "import numpy as np\n\ndef fspl(d_km, f_mhz):\n    \"\"\"Calculate Free Space Path Loss in dB.\"\"\"\n    return 32.44 + 20 * np.log10(d_km) + 20 * np.log10(f_mhz)\n\n# Example: 2.4 GHz WiFi at 100 meters (0.1 km)\nd_km = 0.1\nf_mhz = 2400\nloss_db = fspl(d_km, f_mhz)\nprint(f\"FSPL at {d_km*1000}m and {f_mhz} MHz: {loss_db:.2f} dB\")\n\n# Example: LEO Satellite at 500 km, S-band (2200 MHz)\nloss_leo = fspl(500, 2200)\nprint(f\"FSPL for LEO (500km, 2.2 GHz): {loss_leo:.2f} dB\")",
+      "codeTitle": "FSPL Calculation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "3. Receiver Noise and Thermal Noise Floor",
+      "content": "Every receiver adds noise to the signal. The fundamental limit is thermal noise (Johnson-Nyquist noise), caused by the thermal agitation of electrons. \n\nThe thermal noise power is:\nN = k * T * B\nWhere:\n- k is Boltzmann's constant (1.38e-23 J/K)\n- T is the system temperature in Kelvin (typically 290 K for standard room temperature)\n- B is the bandwidth in Hz\n\nAt T = 290 K, the noise power spectral density (N0 = k*T) is 4e-21 W/Hz, which is exactly -174 dBm/Hz. This is a critical number to memorize.\n\nThe total thermal noise floor in dBm is:\nNoise Floor (dBm) = -174 + 10 * log10(B)\n\nFor example, a 1 MHz bandwidth has a noise floor of -174 + 60 = -114 dBm. A 20 MHz WiFi channel has a noise floor of -174 + 73 = -101 dBm.",
+      "code": "import numpy as np\n\ndef thermal_noise_floor(bandwidth_hz, temp_k=290):\n    \"\"\"\n    Calculate thermal noise floor in dBm.\n    Default temp is 290K, yielding -174 dBm/Hz.\n    \"\"\"\n    k = 1.380649e-23 # Boltzmann constant\n    # N = kTB in Watts\n    n_watts = k * temp_k * bandwidth_hz\n    # Convert to mW then to dBm\n    return 10 * np.log10(n_watts * 1000)\n\n# Quick rule of thumb using -174 dBm/Hz\ndef noise_floor_quick(bandwidth_hz):\n    return -174 + 10 * np.log10(bandwidth_hz)\n\nbw_wifi = 20e6 # 20 MHz\nprint(f\"WiFi 20MHz Noise Floor (exact): {thermal_noise_floor(bw_wifi):.2f} dBm\")\nprint(f\"WiFi 20MHz Noise Floor (quick): {noise_floor_quick(bw_wifi):.2f} dBm\")",
+      "codeTitle": "Thermal Noise Floor",
+      "matlabComparison": null
+    },
+    {
+      "heading": "4. Noise Figure and Cascaded Systems (Friis Formula)",
+      "content": "Real receivers are not perfectly noiseless. They add their own noise, quantified by the Noise Figure (NF) in dB. The Noise Factor (F) is the linear equivalent (NF = 10 * log10(F)).\n\nThe total receiver noise power is:\nTotal Noise (dBm) = Thermal Noise Floor (dBm) + NF (dB)\n\nIn a receiver chain (e.g., LNA → Mixer → Filter → Amplifier), the overall noise factor is determined by the Friis formula for cascaded noise:\nF_total = F1 + (F2 - 1)/G1 + (F3 - 1)/(G1*G2) + ...\nWhere F_n and G_n are the linear noise factors and linear gains of each stage.\n\nCrucially, the first stage (usually the Low Noise Amplifier, LNA) dominates the overall noise figure, provided its gain (G1) is sufficiently high. This is why LNAs are placed as close to the antenna as possible.",
+      "code": "import numpy as np\n\ndef cascaded_nf(gains_db, nfs_db):\n    \"\"\"\n    Calculate cascaded noise figure using Friis formula.\n    gains_db: list of gains in dB for each stage\n    nfs_db: list of noise figures in dB for each stage\n    \"\"\"\n    # Convert to linear\n    gains_lin = 10 ** (np.array(gains_db) / 10)\n    fs_lin = 10 ** (np.array(nfs_db) / 10)\n    \n    f_total = fs_lin[0]\n    cumulative_gain = 1.0\n    \n    for i in range(1, len(gains_lin)):\n        cumulative_gain *= gains_lin[i-1]\n        f_total += (fs_lin[i] - 1) / cumulative_gain\n        \n    return 10 * np.log10(f_total)\n\n# Example: LNA -> Cable -> Mixer -> IF Amp\ngains = [15.0, -2.0, -6.0, 20.0] # dB\nnfs = [1.5, 2.0, 8.0, 4.0]       # dB\n\noverall_nf = cascaded_nf(gains, nfs)\nprint(f\"Cascaded Noise Figure: {overall_nf:.2f} dB\")\n# Notice it's close to the LNA's NF (1.5 dB) because of the 15 dB gain.",
+      "codeTitle": "Cascaded Noise Figure",
+      "matlabComparison": null
+    },
+    {
+      "heading": "5. Receiver Sensitivity and Link Margin",
+      "content": "Receiver sensitivity is the minimum received power required to achieve a specified performance level (e.g., a target Bit Error Rate, BER, or Packet Error Rate, PER). This requires a minimum Signal-to-Noise Ratio (SNR).\n\nSensitivity (dBm) = Thermal Noise Floor (dBm) + Receiver NF (dB) + Required SNR (dB)\n\nOnce we know the received power (Pr) from the Friis transmission equation and the receiver sensitivity, we can calculate the Link Margin:\nLink Margin (dB) = Pr (dBm) - Sensitivity (dBm)\n\nA positive link margin means the link should work. However, in real-world scenarios, signals experience fading (multipath, rain, foliage). We must allocate a Fade Margin to ensure reliability. For example, a Rayleigh fading channel might require a 10-20 dB fade margin to guarantee 99% uptime.",
+      "code": "import numpy as np\n\ndef rx_sensitivity(bandwidth_hz, nf_db, snr_req_db):\n    \"\"\"Calculate receiver sensitivity in dBm.\"\"\"\n    noise_floor = -174 + 10 * np.log10(bandwidth_hz)\n    return noise_floor + nf_db + snr_req_db\n\n# Example: IoT LoRa sensor\nbw_lora = 125e3 # 125 kHz\nnf_lora = 6.0   # dB\nsnr_req = -20.0 # LoRa can operate below the noise floor! (Processing gain)\n\nsens = rx_sensitivity(bw_lora, nf_lora, snr_req)\nprint(f\"LoRa Sensitivity: {sens:.2f} dBm\")\n\n# Link Margin Calculation\npr_dbm = -120.0 # Received power\nmargin = pr_dbm - sens\nprint(f\"Link Margin: {margin:.2f} dB\")",
+      "codeTitle": "Sensitivity and Margin",
+      "matlabComparison": null
+    },
+    {
+      "heading": "6. G/T (Figure of Merit) for Satellite Links",
+      "content": "In satellite communications, the receiver performance is often specified by a single figure of merit called G/T (Gain-to-Temperature ratio), expressed in dB/K.\n\nG/T (dB/K) = Gr (dBi) - 10 * log10(T_sys)\nWhere:\n- Gr is the receive antenna gain\n- T_sys is the total system noise temperature (Antenna temperature + Receiver noise temperature)\n\nUsing G/T simplifies the downlink budget equation:\nSNR = EIRP + G/T - FSPL - k_dBW - 10*log10(B)\nWhere k_dBW is Boltzmann's constant in dBW/K/Hz (-228.6 dBW/K/Hz).\n\nThis is powerful because it decouples the satellite's transmit performance (EIRP) from the ground station's receive performance (G/T).",
+      "code": "import numpy as np\n\ndef calc_g_over_t(gain_dbi, t_ant_k, nf_db):\n    \"\"\"Calculate G/T in dB/K.\"\"\"\n    # Convert NF to noise temperature\n    # F = 1 + Te/T0 => Te = T0 * (F - 1)\n    f_lin = 10 ** (nf_db / 10)\n    t_rx = 290 * (f_lin - 1)\n    \n    t_sys = t_ant_k + t_rx\n    return gain_dbi - 10 * np.log10(t_sys)\n\n# Example: Ground station dish\ngain_dish = 35.0 # dBi\nt_sky = 50.0     # K (looking at cold sky)\nnf_lna = 1.0     # dB\n\ng_t = calc_g_over_t(gain_dish, t_sky, nf_lna)\nprint(f\"Ground Station G/T: {g_t:.2f} dB/K\")",
+      "codeTitle": "G/T Calculation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "7. Building a Reusable Link Budget Class",
+      "content": "To perform systematic link budget analysis, it is best to encapsulate the parameters and calculations in a Python class. This allows for easy parameter sweeps (e.g., plotting margin vs. distance) and generating \"waterfall\" tables that show the power level at each stage of the link.\n\nWe can use Python's `dataclasses` for clean parameter storage and `matplotlib` for visualization. A waterfall table starts at the Tx power, adds gains, subtracts losses, and ends at the Rx SNR, clearly showing where the power goes.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom dataclasses import dataclass\n\n@dataclass\nclass LinkBudget:\n    f_mhz: float\n    tx_power_dbm: float\n    tx_gain_dbi: float\n    tx_loss_db: float\n    rx_gain_dbi: float\n    rx_loss_db: float\n    rx_nf_db: float\n    bw_hz: float\n    req_snr_db: float\n    \n    def fspl(self, d_km):\n        return 32.44 + 20 * np.log10(d_km) + 20 * np.log10(self.f_mhz)\n        \n    def analyze(self, d_km):\n        eirp = self.tx_power_dbm + self.tx_gain_dbi - self.tx_loss_db\n        path_loss = self.fspl(d_km)\n        pr = eirp - path_loss + self.rx_gain_dbi - self.rx_loss_db\n        \n        noise_floor = -174 + 10 * np.log10(self.bw_hz)\n        total_noise = noise_floor + self.rx_nf_db\n        snr = pr - total_noise\n        margin = snr - self.req_snr_db\n        \n        return {'EIRP': eirp, 'FSPL': path_loss, 'Pr': pr, \n                'Noise': total_noise, 'SNR': snr, 'Margin': margin}\n\n# Example: WiFi Link\nwifi_link = LinkBudget(f_mhz=2400, tx_power_dbm=20, tx_gain_dbi=3, tx_loss_db=0,\n                       rx_gain_dbi=3, rx_loss_db=0, rx_nf_db=5, \n                       bw_hz=20e6, req_snr_db=15)\n\nres = wifi_link.analyze(0.1) # 100m\nprint(\"WiFi Link at 100m:\")\nfor k, v in res.items():\n    print(f\"{k:>8}: {v:7.2f}\")",
+      "codeTitle": "Link Budget Class",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Cellular Uplink Budget",
+      "prompt": "Calculate the maximum range (in km) for a cellular IoT uplink. \n\nParameters:\n- Frequency: 900 MHz\n- UE Tx Power: 23 dBm\n- UE Antenna Gain: -2 dBi\n- Base Station (eNB) Antenna Gain: 18 dBi\n- eNB Cable Loss: 2 dB\n- eNB Noise Figure: 3 dB\n- Bandwidth: 180 kHz (1 PRB in LTE)\n- Required SNR: -5 dB\n- Fade Margin: 10 dB\n\nWrite a script to calculate the maximum distance where the link margin is exactly 0 dB (including the fade margin).",
+      "hint": "First calculate the receiver sensitivity. Then calculate the maximum allowable path loss (MAPL). Finally, invert the FSPL equation to solve for distance `d`.",
+      "solution": "import numpy as np\n\n# Parameters\nf_mhz = 900\ntx_power = 23.0\ntx_gain = -2.0\nrx_gain = 18.0\nrx_loss = 2.0\nnf = 3.0\nbw = 180e3\nreq_snr = -5.0\nfade_margin = 10.0\n\n# 1. Calculate Sensitivity\nnoise_floor = -174 + 10 * np.log10(bw)\nsensitivity = noise_floor + nf + req_snr\nprint(f\"Sensitivity: {sensitivity:.2f} dBm\")\n\n# 2. Calculate Maximum Allowable Path Loss (MAPL)\n# Pr = Tx + TxG + RxG - RxL - FSPL\n# We need Pr >= Sensitivity + Fade Margin\n# MAPL = Tx + TxG + RxG - RxL - (Sensitivity + Fade Margin)\nmapl = tx_power + tx_gain + rx_gain - rx_loss - (sensitivity + fade_margin)\nprint(f\"MAPL: {mapl:.2f} dB\")\n\n# 3. Invert FSPL to find distance\n# FSPL = 32.44 + 20*log10(d) + 20*log10(f)\n# 20*log10(d) = FSPL - 32.44 - 20*log10(f)\nlog10_d = (mapl - 32.44 - 20 * np.log10(f_mhz)) / 20\nd_km = 10 ** log10_d\n\nprint(f\"Maximum Range: {d_km:.2f} km\")",
+      "explanation": "This is a classic Maximum Allowable Path Loss (MAPL) calculation. By determining the absolute minimum signal level required at the receiver (Sensitivity) and adding the required Fade Margin, we find the target received power. Subtracting this from the EIRP and receiver gains gives the maximum loss the signal can endure. Inverting the FSPL formula gives the theoretical maximum range in free space."
+    },
+    {
+      "title": "Exercise 2: Plotting Margin vs. Distance",
+      "prompt": "Using the `LinkBudget` class defined in Section 7, plot the Link Margin vs. Distance for a LEO Satellite Downlink.\n\nParameters:\n- Frequency: 2200 MHz (S-band)\n- Tx Power: 30 dBm (1W)\n- Tx Gain: 6 dBi\n- Tx Loss: 1 dB\n- Rx Gain: 30 dBi (Parabolic dish)\n- Rx Loss: 0.5 dB\n- Rx NF: 1.5 dB\n- Bandwidth: 5 MHz\n- Required SNR: 10 dB\n\nPlot the margin for distances from 500 km to 2500 km (typical slant ranges for a 500 km altitude LEO satellite). Add a horizontal dashed line at 0 dB margin.",
+      "hint": "Create an array of distances using `np.linspace`. Loop through the distances or modify the `analyze` method to handle numpy arrays directly (the provided class already handles arrays because `np.log10` is vectorized!).",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom dataclasses import dataclass\n\n@dataclass\nclass LinkBudget:\n    f_mhz: float\n    tx_power_dbm: float\n    tx_gain_dbi: float\n    tx_loss_db: float\n    rx_gain_dbi: float\n    rx_loss_db: float\n    rx_nf_db: float\n    bw_hz: float\n    req_snr_db: float\n    \n    def fspl(self, d_km):\n        return 32.44 + 20 * np.log10(d_km) + 20 * np.log10(self.f_mhz)\n        \n    def analyze(self, d_km):\n        eirp = self.tx_power_dbm + self.tx_gain_dbi - self.tx_loss_db\n        path_loss = self.fspl(d_km)\n        pr = eirp - path_loss + self.rx_gain_dbi - self.rx_loss_db\n        \n        noise_floor = -174 + 10 * np.log10(self.bw_hz)\n        total_noise = noise_floor + self.rx_nf_db\n        snr = pr - total_noise\n        margin = snr - self.req_snr_db\n        return margin\n\n# Initialize budget\nleo_link = LinkBudget(f_mhz=2200, tx_power_dbm=30, tx_gain_dbi=6, tx_loss_db=1,\n                      rx_gain_dbi=30, rx_loss_db=0.5, rx_nf_db=1.5, \n                      bw_hz=5e6, req_snr_db=10)\n\n# Generate distances\ndistances = np.linspace(500, 2500, 100)\nmargins = leo_link.analyze(distances)\n\n# Plot\nplt.figure(figsize=(8, 5))\nplt.plot(distances, margins, linewidth=2)\nplt.axhline(0, color='r', linestyle='--', label='0 dB Margin')\nplt.grid(True)\nplt.xlabel('Slant Range (km)')\nplt.ylabel('Link Margin (dB)')\nplt.title('LEO Downlink Margin vs. Distance')\nplt.legend()\n# plt.show() # Commented out for automated testing",
+      "explanation": "Because we used `numpy` functions like `np.log10` in our class, the `analyze` method naturally supports vectorization. Passing an array of distances returns an array of margins, making plotting extremely efficient without needing explicit `for` loops."
+    },
+    {
+      "title": "Exercise 3: Sensitivity vs. Data Rate (Shannon Limit)",
+      "prompt": "The Shannon-Hartley theorem states that Capacity C = B * log2(1 + SNR_linear). \n\nWrite a function that calculates the theoretical minimum receiver sensitivity (in dBm) required to achieve a target data rate (C in bps) for a given bandwidth (B in Hz) and receiver noise figure (NF in dB).\n\nPlot the required sensitivity for a 20 MHz WiFi channel as the target data rate varies from 10 Mbps to 100 Mbps. Assume an NF of 5 dB.",
+      "hint": "Rearrange the Shannon formula to solve for SNR_linear: SNR_linear = 2^(C/B) - 1. Convert this to dB, then add it to the thermal noise floor and NF.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef shannon_sensitivity(c_bps, b_hz, nf_db):\n    \"\"\"\n    Calculate theoretical minimum sensitivity for a target data rate.\n    \"\"\"\n    # Solve Shannon capacity for linear SNR\n    # C = B * log2(1 + SNR)\n    # C/B = log2(1 + SNR)\n    # 2^(C/B) = 1 + SNR\n    snr_linear = (2 ** (c_bps / b_hz)) - 1\n    \n    # Convert to dB\n    snr_db = 10 * np.log10(snr_linear)\n    \n    # Calculate sensitivity\n    noise_floor = -174 + 10 * np.log10(b_hz)\n    return noise_floor + nf_db + snr_db\n\n# Parameters\nbw = 20e6\nnf = 5.0\nrates_mbps = np.linspace(10, 100, 50)\nrates_bps = rates_mbps * 1e6\n\n# Calculate sensitivities\nsensitivities = shannon_sensitivity(rates_bps, bw, nf)\n\n# Plot\nplt.figure(figsize=(8, 5))\nplt.plot(rates_mbps, sensitivities, 'g-', linewidth=2)\nplt.grid(True)\nplt.xlabel('Target Data Rate (Mbps)')\nplt.ylabel('Required Sensitivity (dBm)')\nplt.title('Shannon Limit: Sensitivity vs Data Rate (20 MHz BW)')\n# plt.show()",
+      "explanation": "This exercise bridges information theory and RF link budgets. As you demand higher data rates in the same bandwidth, the required SNR increases exponentially (due to the 2^(C/B) term). This translates to a rapidly increasing sensitivity requirement, meaning the transmitter must be closer or transmit more power to maintain the higher data rate."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "If a transmitter outputs 40 dBm of power, what is this in Watts?",
+      "options": [
+        "4 Watts",
+        "10 Watts",
+        "40 Watts",
+        "100 Watts"
+      ],
+      "correctIndex": 1,
+      "explanation": "30 dBm is 1 Watt. Adding 10 dB multiplies the power by 10. Therefore, 40 dBm is 10 Watts."
+    },
+    {
+      "question": "If the distance between a transmitter and receiver is doubled, how much does the Free-Space Path Loss (FSPL) increase?",
+      "options": [
+        "3 dB",
+        "6 dB",
+        "10 dB",
+        "It quadruples (12 dB)"
+      ],
+      "correctIndex": 1,
+      "explanation": "FSPL is proportional to the square of the distance. In dB, 20 * log10(2) ≈ 6 dB. So doubling the distance adds 6 dB of loss."
+    },
+    {
+      "question": "What is the approximate thermal noise floor for a 1 MHz bandwidth at room temperature?",
+      "options": [
+        "-174 dBm",
+        "-114 dBm",
+        "-104 dBm",
+        "-144 dBm"
+      ],
+      "correctIndex": 1,
+      "explanation": "The noise floor is -174 dBm/Hz. For 1 MHz (10^6 Hz), we add 10 * log10(10^6) = 60 dB. -174 + 60 = -114 dBm."
+    },
+    {
+      "question": "In a cascaded receiver chain, which component has the most significant impact on the overall Noise Figure?",
+      "options": [
+        "The final baseband amplifier",
+        "The mixer",
+        "The analog-to-digital converter",
+        "The first Low Noise Amplifier (LNA)"
+      ],
+      "correctIndex": 3,
+      "explanation": "According to the Friis formula for cascaded noise, the noise contributions of subsequent stages are divided by the gain of the preceding stages. Therefore, the first stage (LNA) dominates the overall noise figure."
+    },
+    {
+      "question": "A receiver has a sensitivity of -90 dBm. The received power is -85 dBm. What is the link margin?",
+      "options": [
+        "-5 dB",
+        "5 dB",
+        "175 dB",
+        "0.94"
+      ],
+      "correctIndex": 1,
+      "explanation": "Link Margin = Received Power - Sensitivity = -85 dBm - (-90 dBm) = 5 dB."
+    },
+    {
+      "question": "Why is G/T a useful metric in satellite communications?",
+      "options": [
+        "It combines the transmit power and antenna gain into one number.",
+        "It decouples the ground station's receive performance from the satellite's transmit performance.",
+        "It accounts for the free-space path loss automatically.",
+        "It converts temperature directly into decibels."
+      ],
+      "correctIndex": 1,
+      "explanation": "G/T (Gain-to-Temperature ratio) characterizes the receiver's performance independently of the transmitter, simplifying the link budget equation by grouping the receive antenna gain and system noise temperature into a single figure of merit."
+    }
+  ]
+}

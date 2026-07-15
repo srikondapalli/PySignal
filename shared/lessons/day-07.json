@@ -1,0 +1,162 @@
+{
+  "id": "day-07",
+  "day": 7,
+  "title": "Pulse Shaping & Matched Filtering",
+  "subtitle": "Master bandwidth limitation, ISI, and optimal SNR using Root-Raised-Cosine filters in Python.",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Understand the need for pulse shaping to limit bandwidth and avoid Inter-Symbol Interference (ISI).",
+    "Implement Root-Raised-Cosine (RRC) filters from closed-form equations with special-case handling.",
+    "Apply upsampling, pulse shaping, and matched filtering to a complete TX/RX chain.",
+    "Visualize eye diagrams and analyze the impact of roll-off factor on occupied bandwidth and PAPR."
+  ],
+  "sections": [
+    {
+      "heading": "Why Pulse Shaping? Bandwidth Limitation & ISI",
+      "content": "In digital communications, transmitting raw rectangular pulses (like a simple NRZ signal) is highly inefficient. A rectangular pulse in the time domain corresponds to a sinc function in the frequency domain, which has infinite bandwidth and decays very slowly (1/f). Real-world channels are band-limited, meaning they will truncate these high-frequency components, causing the pulses to spread out in time and overlap with adjacent symbols. This overlap is known as Inter-Symbol Interference (ISI).\n\nTo solve this, we use pulse shaping filters. The goal is to shape the transmitted symbols such that they occupy a strictly limited bandwidth while ensuring zero ISI at the sampling instants. The Nyquist criterion for zero ISI states that the overall impulse response of the system (TX filter * Channel * RX filter) must be zero at all non-zero integer multiples of the symbol period (T_s). The most common filter family satisfying this criterion is the Raised Cosine (RC) filter.",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": null
+    },
+    {
+      "heading": "The Raised Cosine and Root-Raised-Cosine (RRC) Filters",
+      "content": "While a Raised Cosine (RC) filter satisfies the Nyquist criterion for zero ISI, in practice, we split this filtering equally between the transmitter and receiver to maximize the Signal-to-Noise Ratio (SNR) in the presence of Additive White Gaussian Noise (AWGN). This is known as matched filtering.\n\nWe use a Root-Raised-Cosine (RRC) filter at the transmitter and an identical RRC filter at the receiver. The convolution of two RRC filters yields an RC filter response (RRC * RRC = RC). Thus, the overall system response satisfies the Nyquist criterion (zero ISI), while the matched filter at the receiver maximizes the SNR.\n\nThe RRC filter is defined by its roll-off factor (beta or alpha), which ranges from 0 to 1. A roll-off of 0 gives a theoretical brick-wall filter (minimum bandwidth but infinite time duration), while a roll-off of 1 gives a wider bandwidth but faster time-domain decay. The excess bandwidth is directly proportional to the roll-off factor.",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": null
+    },
+    {
+      "heading": "Implementing the RRC Filter in Python",
+      "content": "Unlike MATLAB's `rcosdesign`, scipy doesn't have a built-in RRC filter generator that perfectly matches communication system needs, so it's standard practice to implement the closed-form time-domain equation. \n\nThe RRC impulse response has a singularity at t = 0 and, for beta > 0, at t = +/- T_s / (4 * beta). We must handle these special cases carefully using L'Hopital's rule or by slightly offsetting the time vector to avoid division by zero. In this implementation, we explicitly check for these conditions to ensure numerical stability.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef rrcosfilter(N, alpha, Ts, Fs):\n    '''\n    Generates a Root Raised Cosine (RRC) filter impulse response.\n    N: Filter length in samples (must be odd)\n    alpha: Roll-off factor (0 to 1)\n    Ts: Symbol period in seconds\n    Fs: Sampling rate in Hz\n    '''\n    T_delta = 1/Fs\n    time_idx = np.arange(-N//2 + 1, N//2 + 1)\n    t = time_idx * T_delta\n    h_rrc = np.zeros(N, dtype=float)\n    \n    for i in range(N):\n        if t[i] == 0.0:\n            h_rrc[i] = 1.0 - alpha + (4*alpha/np.pi)\n        elif alpha != 0 and np.isclose(np.abs(t[i]), Ts / (4*alpha)):\n            h_rrc[i] = (alpha/np.sqrt(2)) * (((1+2/np.pi) * (np.sin(np.pi/(4*alpha)))) + ((1-2/np.pi)*(np.cos(np.pi/(4*alpha)))))\n        else:\n            num = np.sin(np.pi*t[i]*(1-alpha)/Ts) + 4*alpha*(t[i]/Ts)*np.cos(np.pi*t[i]*(1+alpha)/Ts)\n            den = np.pi * (t[i]/Ts) * (1 - (4*alpha*t[i]/Ts)**2)\n            h_rrc[i] = num / den\n            \n    # Normalize to have unit energy\n    h_rrc = h_rrc / np.sqrt(np.sum(h_rrc**2))\n    return t, h_rrc\n\n# Example usage\nsps = 4           # Samples per symbol\nspan = 6          # Filter span in symbols\nN = span * sps + 1 # Filter length\nalpha = 0.35      # Roll-off factor\nTs = 1.0          # Normalized symbol time\nFs = sps / Ts     # Sampling frequency\n\nt, h = rrcosfilter(N, alpha, Ts, Fs)\n\nplt.figure(figsize=(8, 4))\nplt.plot(t, h, 'b.-')\nplt.title(f'RRC Filter Impulse Response (alpha={alpha}, span={span})')\nplt.xlabel('Time (s)')\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Robust RRC Filter Implementation",
+      "matlabComparison": "h = rcosdesign(alpha, span, sps, 'sqrt');"
+    },
+    {
+      "heading": "Upsampling and Pulse Shaping",
+      "content": "To apply the RRC filter to our digital symbols, we first need to upsample the symbol sequence. If we have `sps` (samples per symbol), we insert `sps - 1` zeros between each symbol. This process is called zero-stuffing.\n\nAfter upsampling, we convolve the zero-stuffed sequence with the RRC filter impulse response. This convolution replaces each discrete symbol with a scaled and shifted copy of the RRC pulse. Because the RRC pulses extend over multiple symbol periods (defined by the filter `span`), they overlap. The resulting continuous-like waveform is our pulse-shaped signal, ready for upconversion and transmission.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import upfirdn\n\n# 1. Generate random QPSK symbols\nnum_symbols = 50\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], num_symbols) / np.sqrt(2)\n\n# 2. Upsample and apply pulse shaping filter\n# upfirdn does upsampling (zero-stuffing) and FIR filtering in one step!\nsps = 4\nspan = 6\nN = span * sps + 1\nalpha = 0.25\n_, h_rrc = rrcosfilter(N, alpha, 1.0, sps)\n\n# Apply filter. upfirdn is highly optimized for this exact operation.\ntx_signal = upfirdn(h_rrc, symbols, up=sps)\n\n# Plot the real part of the transmitted signal\nplt.figure(figsize=(10, 4))\nplt.plot(np.real(tx_signal), label='Pulse Shaped Signal (I-channel)')\n# Plot original symbols as stems (scaled by sps and shifted by delay)\ndelay = (N - 1) // 2\nplt.stem(np.arange(num_symbols)*sps + delay, np.real(symbols), 'r', markerfmt='ro', label='Original Symbols')\nplt.title('Upsampling and Pulse Shaping')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Pulse Shaping with scipy.signal.upfirdn",
+      "matlabComparison": "tx_signal = upfirdn(symbols, h_rrc, sps);"
+    },
+    {
+      "heading": "Matched Filtering and the Combined RC Response",
+      "content": "At the receiver, the signal is corrupted by noise. To maximize the SNR at the sampling instant, we pass the received signal through a matched filter. For an AWGN channel, the optimal matched filter has an impulse response that is the time-reversed and complex-conjugated version of the transmit pulse. Since our RRC filter is real and symmetric, the matched filter is identical to the transmit filter.\n\nWhen the signal passes through both the TX RRC filter and the RX RRC filter, the overall equivalent impulse response is the convolution of the two, which equals a Raised Cosine (RC) filter. The RC filter has zero-crossings at exactly the symbol intervals (except at t=0), guaranteeing zero ISI. The total delay introduced by the TX and RX filters is `span * sps` samples.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import convolve\n\n# Re-use h_rrc from previous section\n# The matched filter is identical for a real, symmetric RRC\nh_rx = h_rrc\n\n# Combined response: RRC * RRC = RC\nh_rc = convolve(h_rrc, h_rx, mode='full')\n\n# Time vector for combined response\nt_rc = np.arange(-(len(h_rc)//2), len(h_rc)//2 + 1) / sps\n\nplt.figure(figsize=(8, 4))\nplt.plot(t_rc, h_rc, 'g.-')\nplt.title('Combined Response (RC Filter)')\nplt.xlabel('Time (Symbol Periods)')\nplt.axhline(0, color='k', linestyle='--')\n# Highlight zero crossings at integer symbol periods\nzero_crossings = np.arange(-span, span+1)\nplt.plot(zero_crossings, np.zeros_like(zero_crossings), 'ro', label='Zero ISI points')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Verifying Zero ISI with the Combined RC Response",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Visualizing Signal Quality: The Eye Diagram",
+      "content": "The eye diagram is a crucial tool for analyzing digital signals. It is created by wrapping the time-domain signal over a window of a few symbol periods (typically 2 or 3) and overlaying the traces. \n\nA wide-open 'eye' at the sampling instant indicates minimal ISI and good noise margin. If the eye is closed, the receiver will make errors. The RRC filtered signal will not have a perfectly open eye because it still contains ISI; the eye only fully opens *after* the matched filter at the receiver (when the overall response becomes RC).\n\nPython doesn't have a built-in eye diagram function like MATLAB's `eyediagram`, but it's straightforward to implement using matplotlib by reshaping the signal array.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef plot_eye_diagram(signal, sps, span_symbols=2, title='Eye Diagram'):\n    '''\n    Plots an eye diagram for a given signal.\n    '''\n    samples_per_trace = sps * span_symbols\n    # Truncate signal to a multiple of samples_per_trace\n    num_traces = len(signal) // samples_per_trace\n    truncated_sig = signal[:num_traces * samples_per_trace]\n    \n    # Reshape into a 2D array where each row is one trace\n    traces = truncated_sig.reshape((num_traces, samples_per_trace))\n    \n    time_axis = np.linspace(-span_symbols/2, span_symbols/2, samples_per_trace)\n    \n    plt.figure(figsize=(8, 5))\n    # Plot all traces. Alpha makes overlapping lines darker.\n    plt.plot(time_axis, traces.T, color='blue', alpha=0.1)\n    plt.title(title)\n    plt.xlabel('Time (Symbol Periods)')\n    plt.ylabel('Amplitude')\n    plt.grid(True)\n    plt.show()\n\n# Example: Eye diagram of the TX signal (RRC filtered)\n# Note: We discard the transient filter tails for a cleaner plot\ndelay = (N - 1) // 2\nsteady_state_tx = np.real(tx_signal[delay:-delay])\nplot_eye_diagram(steady_state_tx, sps, title='TX Signal Eye Diagram (RRC - ISI present)')",
+      "codeTitle": "Implementing an Eye Diagram in Python",
+      "matlabComparison": "eyediagram(tx_signal, 2*sps);"
+    },
+    {
+      "heading": "System Trade-offs: Bandwidth, PAPR, and Filter Span",
+      "content": "The roll-off factor (alpha) controls the excess bandwidth of the signal. The absolute bandwidth is B = (1 + alpha) / (2 * T_s). A smaller alpha means higher spectral efficiency, but it causes the time-domain pulse to ring longer. This longer ringing increases the Peak-to-Average Power Ratio (PAPR) of the signal, which puts stricter linearity requirements on the Power Amplifier (PA).\n\nFurthermore, a smaller alpha requires a longer filter `span` to accurately represent the slowly decaying tails. Truncating the filter too early (small span) introduces out-of-band emissions (spectral leakage) and degrades the ISI performance. A typical trade-off in modern systems (like 5G or DVB) is an alpha between 0.1 and 0.35, with a filter span of 6 to 10 symbols.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import welch\n\n# Compare spectra for different roll-off factors\nalphas = [0.1, 0.5, 0.9]\nplt.figure(figsize=(8, 5))\n\nfor a in alphas:\n    _, h = rrcosfilter(N, a, 1.0, sps)\n    tx = upfirdn(h, symbols, up=sps)\n    # Calculate Power Spectral Density using Welch's method\n    f, Pxx = welch(tx, fs=sps, nperseg=256, return_onesided=False)\n    f = np.fft.fftshift(f)\n    Pxx = np.fft.fftshift(Pxx)\n    plt.plot(f, 10*np.log10(Pxx), label=f'alpha={a}')\n\nplt.title('Impact of Roll-off Factor on Occupied Bandwidth')\nplt.xlabel('Normalized Frequency (f * Ts)')\nplt.ylabel('PSD (dB/Hz)')\nplt.xlim(-1, 1)\nplt.ylim(-40, 10)\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Analyzing Occupied Bandwidth vs Roll-off Factor",
+      "matlabComparison": null
+    },
+    {
+      "heading": "Complete TX/RX Chain Example",
+      "content": "Let's put it all together. We will generate random bits, map them to 16-QAM symbols, upsample, apply the TX RRC filter, add AWGN (simulating the channel), apply the RX matched filter, downsample at the correct optimal sampling instant, and plot the received constellation.\n\nThe total delay through the system is the sum of the group delays of the TX and RX filters. For FIR filters of length N, the delay is (N-1)/2 samples. Since we have two identical filters, the total delay is N-1 samples, which equals `span * sps` samples. We must discard these transient samples before downsampling to recover our symbols.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import upfirdn\n\n# Parameters\nsps = 4; span = 6; alpha = 0.35\nN = span * sps + 1\nnum_symbols = 1000\n\n# 1. Generate 16-QAM symbols\nmapping = np.array([-3, -1, 1, 3])\nsym_i = np.random.choice(mapping, num_symbols)\nsym_q = np.random.choice(mapping, num_symbols)\nsymbols = (sym_i + 1j * sym_q) / np.sqrt(10) # Normalize average power to 1\n\n# 2. TX Pulse Shaping\n_, h_rrc = rrcosfilter(N, alpha, 1.0, sps)\ntx_sig = upfirdn(h_rrc, symbols, up=sps)\n\n# 3. Channel (AWGN)\nSNR_dB = 20\nnoise_pwr = 10**(-SNR_dB/10)\nnoise = np.sqrt(noise_pwr/2) * (np.random.randn(len(tx_sig)) + 1j*np.random.randn(len(tx_sig)))\nrx_sig = tx_sig + noise\n\n# 4. RX Matched Filtering\n# upfirdn with down=1 is equivalent to convolve, but faster\nrx_filtered = upfirdn(h_rrc, rx_sig, up=1, down=1)\n\n# 5. Downsampling and Delay Compensation\n# Total delay is span * sps samples. \n# We start sampling at the peak of the first valid symbol.\ntotal_delay = span * sps\nrx_symbols = rx_filtered[total_delay : total_delay + num_symbols*sps : sps]\n\n# 6. Plot Constellation\nplt.figure(figsize=(5, 5))\nplt.scatter(np.real(rx_symbols), np.imag(rx_symbols), alpha=0.5, c='b')\nplt.scatter(np.real(symbols), np.imag(symbols), marker='x', c='r', label='TX')\nplt.title(f'Received 16-QAM Constellation (SNR={SNR_dB}dB)')\nplt.grid(True)\nplt.legend()\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "End-to-End TX/RX Chain with Matched Filtering",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Filter Span and Spectral Leakage",
+      "prompt": "Generate an RRC filter with `alpha = 0.2` and `sps = 4`. Compare the frequency response (using `scipy.signal.freqz` or `welch` on a random signal) for two different filter spans: `span = 2` and `span = 10`. Plot both spectra on the same graph. What happens to the out-of-band emissions when the span is too short?",
+      "hint": "Use the `rrcosfilter` function provided in the lesson. Remember that the filter length `N` is `span * sps + 1`. Use `plt.semilogy` or `10*np.log10` for the y-axis to clearly see the stopband attenuation.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import freqz\n\n# Define rrcosfilter (assuming it's available from the lesson)\ndef rrcosfilter(N, alpha, Ts, Fs):\n    T_delta = 1/Fs\n    time_idx = np.arange(-N//2 + 1, N//2 + 1)\n    t = time_idx * T_delta\n    h_rrc = np.zeros(N, dtype=float)\n    for i in range(N):\n        if t[i] == 0.0:\n            h_rrc[i] = 1.0 - alpha + (4*alpha/np.pi)\n        elif alpha != 0 and np.isclose(np.abs(t[i]), Ts / (4*alpha)):\n            h_rrc[i] = (alpha/np.sqrt(2)) * (((1+2/np.pi) * (np.sin(np.pi/(4*alpha)))) + ((1-2/np.pi)*(np.cos(np.pi/(4*alpha)))))\n        else:\n            num = np.sin(np.pi*t[i]*(1-alpha)/Ts) + 4*alpha*(t[i]/Ts)*np.cos(np.pi*t[i]*(1+alpha)/Ts)\n            den = np.pi * (t[i]/Ts) * (1 - (4*alpha*t[i]/Ts)**2)\n            h_rrc[i] = num / den\n    return t, h_rrc / np.sqrt(np.sum(h_rrc**2))\n\nalpha = 0.2\nsps = 4\n\n# Span = 2\nN2 = 2 * sps + 1\n_, h2 = rrcosfilter(N2, alpha, 1.0, sps)\nw2, h2_f = freqz(h2, worN=1024, fs=sps)\n\n# Span = 10\nN10 = 10 * sps + 1\n_, h10 = rrcosfilter(N10, alpha, 1.0, sps)\nw10, h10_f = freqz(h10, worN=1024, fs=sps)\n\nplt.figure(figsize=(8, 5))\nplt.plot(w2, 20 * np.log10(np.abs(h2_f)), label='Span = 2')\nplt.plot(w10, 20 * np.log10(np.abs(h10_f)), label='Span = 10')\nplt.title('RRC Filter Frequency Response vs Span')\nplt.xlabel('Frequency (Hz)')\nplt.ylabel('Magnitude (dB)')\nplt.ylim(-60, 5)\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "explanation": "When the filter span is too short (e.g., span=2), we are abruptly truncating the time-domain impulse response before it has decayed sufficiently. In the frequency domain, this truncation acts like a rectangular window, which causes spectral leakage. The stopband attenuation is very poor, meaning the signal will leak into adjacent frequency channels. Increasing the span to 10 allows the tails to decay, resulting in a much deeper stopband and better out-of-band rejection."
+    },
+    {
+      "title": "Exercise 2: Eye Diagram of the Matched Filter Output",
+      "prompt": "Using the complete TX/RX chain code from the lesson, extract the received signal *after* the matched filter but *before* downsampling (`rx_filtered`). Plot the eye diagram of this signal using the `plot_eye_diagram` function. Compare it mentally to the TX eye diagram. What do you observe at the optimal sampling instants?",
+      "hint": "You will need to discard the transient samples at the beginning and end of `rx_filtered` before plotting the eye diagram, just like we did for the TX signal. The transient at the start is `span * sps` samples.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import upfirdn\n\n# Define rrcosfilter and plot_eye_diagram (assuming available)\ndef rrcosfilter(N, alpha, Ts, Fs):\n    T_delta = 1/Fs\n    time_idx = np.arange(-N//2 + 1, N//2 + 1)\n    t = time_idx * T_delta\n    h_rrc = np.zeros(N, dtype=float)\n    for i in range(N):\n        if t[i] == 0.0:\n            h_rrc[i] = 1.0 - alpha + (4*alpha/np.pi)\n        elif alpha != 0 and np.isclose(np.abs(t[i]), Ts / (4*alpha)):\n            h_rrc[i] = (alpha/np.sqrt(2)) * (((1+2/np.pi) * (np.sin(np.pi/(4*alpha)))) + ((1-2/np.pi)*(np.cos(np.pi/(4*alpha)))))\n        else:\n            num = np.sin(np.pi*t[i]*(1-alpha)/Ts) + 4*alpha*(t[i]/Ts)*np.cos(np.pi*t[i]*(1+alpha)/Ts)\n            den = np.pi * (t[i]/Ts) * (1 - (4*alpha*t[i]/Ts)**2)\n            h_rrc[i] = num / den\n    return t, h_rrc / np.sqrt(np.sum(h_rrc**2))\n\ndef plot_eye_diagram(signal, sps, span_symbols=2, title='Eye Diagram'):\n    samples_per_trace = sps * span_symbols\n    num_traces = len(signal) // samples_per_trace\n    truncated_sig = signal[:num_traces * samples_per_trace]\n    traces = truncated_sig.reshape((num_traces, samples_per_trace))\n    time_axis = np.linspace(-span_symbols/2, span_symbols/2, samples_per_trace)\n    plt.figure(figsize=(8, 5))\n    plt.plot(time_axis, traces.T, color='blue', alpha=0.1)\n    plt.title(title)\n    plt.xlabel('Time (Symbol Periods)')\n    plt.ylabel('Amplitude')\n    plt.grid(True)\n    plt.show()\n\n# Setup system\nsps = 4; span = 6; alpha = 0.35\nN = span * sps + 1\nnum_symbols = 200\n\n# Generate BPSK symbols for a clearer eye diagram\nsymbols = np.random.choice([-1, 1], num_symbols)\n\n# TX and RX\n_, h_rrc = rrcosfilter(N, alpha, 1.0, sps)\ntx_sig = upfirdn(h_rrc, symbols, up=sps)\nrx_filtered = upfirdn(h_rrc, tx_sig, up=1, down=1) # Noiseless channel for clear eye\n\n# Discard transients. Total delay is span * sps.\ntotal_delay = span * sps\nsteady_state_rx = rx_filtered[total_delay : -total_delay]\n\nplot_eye_diagram(steady_state_rx, sps, title='RX Matched Filter Output Eye Diagram (RC Response)')",
+      "explanation": "The signal after the matched filter has an overall Raised Cosine (RC) response. Unlike the TX signal (which only had RRC filtering and thus exhibited ISI), the RC filtered signal has zero crossings at exactly the symbol intervals. In the eye diagram, this manifests as a perfectly open 'eye' at the center of the symbol period (time = 0). At this exact instant, all traces converge to either +1 or -1 (for BPSK), indicating zero Inter-Symbol Interference."
+    },
+    {
+      "title": "Challenge: Fractional Delay and Timing Offset",
+      "prompt": "In a real receiver, the sampling clock is never perfectly aligned with the transmitter. Simulate a timing offset by delaying the `tx_sig` by 1 sample (which is T_s / 4 since sps=4) before adding noise and passing it to the matched filter. Downsample the matched filter output as before. Plot the resulting constellation. What happens to the constellation points, and why?",
+      "hint": "You can introduce a 1-sample delay by simply prepending a zero to `tx_sig` using `np.insert(tx_sig, 0, 0)` or by slicing. Remember to adjust your downsampling index or just observe the degradation if you keep the original sampling phase.",
+      "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import upfirdn\n\n# Define rrcosfilter (assuming available)\ndef rrcosfilter(N, alpha, Ts, Fs):\n    T_delta = 1/Fs\n    time_idx = np.arange(-N//2 + 1, N//2 + 1)\n    t = time_idx * T_delta\n    h_rrc = np.zeros(N, dtype=float)\n    for i in range(N):\n        if t[i] == 0.0:\n            h_rrc[i] = 1.0 - alpha + (4*alpha/np.pi)\n        elif alpha != 0 and np.isclose(np.abs(t[i]), Ts / (4*alpha)):\n            h_rrc[i] = (alpha/np.sqrt(2)) * (((1+2/np.pi) * (np.sin(np.pi/(4*alpha)))) + ((1-2/np.pi)*(np.cos(np.pi/(4*alpha)))))\n        else:\n            num = np.sin(np.pi*t[i]*(1-alpha)/Ts) + 4*alpha*(t[i]/Ts)*np.cos(np.pi*t[i]*(1+alpha)/Ts)\n            den = np.pi * (t[i]/Ts) * (1 - (4*alpha*t[i]/Ts)**2)\n            h_rrc[i] = num / den\n    return t, h_rrc / np.sqrt(np.sum(h_rrc**2))\n\n# Parameters\nsps = 4; span = 6; alpha = 0.35\nN = span * sps + 1\nnum_symbols = 1000\n\n# 1. Generate QPSK symbols\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], num_symbols) / np.sqrt(2)\n\n# 2. TX Pulse Shaping\n_, h_rrc = rrcosfilter(N, alpha, 1.0, sps)\ntx_sig = upfirdn(h_rrc, symbols, up=sps)\n\n# 3. Introduce Timing Offset (Delay by 1 sample = Ts/4)\ntx_sig_delayed = np.insert(tx_sig, 0, 0)[:-1] # Shift right by 1, keep length same\n\n# 4. RX Matched Filtering (Noiseless to isolate the effect)\nrx_filtered = upfirdn(h_rrc, tx_sig_delayed, up=1, down=1)\n\n# 5. Downsampling with original (now incorrect) phase\ntotal_delay = span * sps\nrx_symbols = rx_filtered[total_delay : total_delay + num_symbols*sps : sps]\n\n# 6. Plot Constellation\nplt.figure(figsize=(5, 5))\nplt.scatter(np.real(rx_symbols), np.imag(rx_symbols), alpha=0.5, c='b')\nplt.scatter(np.real(symbols), np.imag(symbols), marker='x', c='r', label='Ideal TX')\nplt.title('Constellation with Timing Offset (Ts/4)')\nplt.grid(True)\nplt.legend()\nplt.axis('equal')\nplt.show()",
+      "explanation": "By delaying the signal by 1 sample, we are sampling the matched filter output at `t = T_s/4` instead of the optimal `t = 0`. At this offset, the overall Raised Cosine response is not zero for adjacent symbols. This introduces severe Inter-Symbol Interference (ISI). In the constellation plot, instead of tight clusters, the points are scattered into a cloud, significantly reducing the distance between constellation points and making the system highly susceptible to noise. This demonstrates why symbol timing synchronization (clock recovery) is a critical component of any digital receiver."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why do we typically use a Root-Raised-Cosine (RRC) filter at both the transmitter and receiver, rather than a single Raised Cosine (RC) filter at the transmitter?",
+      "options": [
+        "To minimize the Peak-to-Average Power Ratio (PAPR) at the transmitter.",
+        "To maximize the Signal-to-Noise Ratio (SNR) in an AWGN channel via matched filtering.",
+        "Because an RRC filter is computationally cheaper to implement than an RC filter.",
+        "To completely eliminate ISI before the signal is transmitted over the air."
+      ],
+      "correctIndex": 1,
+      "explanation": "Splitting the RC response into two RRC filters allows the receiver to use a matched filter (identical to the transmit filter). Matched filtering is mathematically proven to maximize the SNR at the sampling instant in the presence of Additive White Gaussian Noise (AWGN)."
+    },
+    {
+      "question": "If a system uses a symbol rate of 1 Msps and an RRC filter with a roll-off factor (alpha) of 0.2, what is the absolute RF bandwidth occupied by the signal?",
+      "options": [
+        "1.0 MHz",
+        "1.2 MHz",
+        "0.6 MHz",
+        "0.2 MHz"
+      ],
+      "correctIndex": 1,
+      "explanation": "The absolute bandwidth of a baseband signal with pulse shaping is B = (1 + alpha) / (2 * T_s). For RF (passband), the bandwidth is double the baseband bandwidth, so B_RF = (1 + alpha) * R_s = (1 + 0.2) * 1 MHz = 1.2 MHz."
+    },
+    {
+      "question": "In the `rrcosfilter` implementation, why is special handling required for `t = 0` and `t = +/- Ts / (4*alpha)`?",
+      "options": [
+        "Because the filter amplitude exceeds the maximum allowed floating-point value at these points.",
+        "Because the denominator of the closed-form RRC equation evaluates to zero at these specific time instants.",
+        "To ensure the filter has exactly unit energy.",
+        "Because scipy's `upfirdn` function requires these specific values to be hardcoded."
+      ],
+      "correctIndex": 1,
+      "explanation": "The standard closed-form equation for the RRC impulse response has a denominator of `pi * (t/Ts) * (1 - (4*alpha*t/Ts)^2)`. This denominator becomes zero at `t = 0` and at `t = +/- Ts / (4*alpha)`. We must use L'Hopital's rule to find the correct limit values at these singularities to avoid division-by-zero errors in Python."
+    },
+    {
+      "question": "What is the primary consequence of using a very small filter `span` (e.g., span=2) when generating an RRC filter?",
+      "options": [
+        "The filter will consume too much memory.",
+        "The main lobe of the frequency response will become too narrow.",
+        "The time-domain pulse will be truncated prematurely, causing spectral leakage (poor out-of-band rejection).",
+        "The Peak-to-Average Power Ratio (PAPR) will increase significantly."
+      ],
+      "correctIndex": 2,
+      "explanation": "The RRC impulse response theoretically extends to infinity. Truncating it with a small span acts like applying a rectangular window, which causes the frequency response to have high sidelobes (spectral leakage), failing to properly limit the bandwidth."
+    },
+    {
+      "question": "Consider the code: `tx_signal = upfirdn(h_rrc, symbols, up=4)`. If `symbols` has a length of 100 and `h_rrc` has a length of 25, what is the length of `tx_signal`?",
+      "options": [
+        "100",
+        "400",
+        "424",
+        "124"
+      ],
+      "correctIndex": 2,
+      "explanation": "The `upfirdn` function first upsamples by inserting zeros, making the sequence length `100 * 4 = 400`. It then convolves this with the filter of length 25. The length of a full convolution is `len(signal) + len(filter) - 1`, so `400 + 25 - 1 = 424`."
+    },
+    {
+      "question": "When observing the eye diagram of a signal that has ONLY passed through the transmitter's RRC filter (before the channel and receiver), what should you expect to see?",
+      "options": [
+        "A perfectly open eye at the sampling instants, indicating zero ISI.",
+        "A partially closed eye, because the RRC filter alone does not satisfy the Nyquist criterion for zero ISI.",
+        "A completely closed eye, making it impossible to recover any data.",
+        "A flat line, because the signal has not yet been matched filtered."
+      ],
+      "correctIndex": 1,
+      "explanation": "The RRC filter alone does not have zero-crossings at the symbol intervals, so it inherently contains ISI. The eye will only fully open after the signal passes through the matched RRC filter at the receiver, at which point the combined response becomes a Raised Cosine (RC) filter, which does satisfy the Nyquist criterion."
+    }
+  ]
+}

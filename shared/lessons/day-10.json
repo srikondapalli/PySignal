@@ -1,0 +1,149 @@
+{
+  "id": "day-10",
+  "day": 10,
+  "title": "OFDM Systems",
+  "subtitle": "Master multicarrier modulation, cyclic prefix, and frequency-domain equalization in Python",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Understand the principle of Orthogonal Frequency-Division Multiplexing (OFDM) and subcarrier orthogonality",
+    "Construct OFDM symbols using IFFT/FFT and map data, pilot, guard, and DC subcarriers",
+    "Analyze the role of the Cyclic Prefix (CP) in converting linear convolution to circular convolution",
+    "Implement one-tap frequency-domain equalization (ZF and MMSE) and channel estimation",
+    "Simulate an end-to-end OFDM link over a multipath channel and evaluate BER performance"
+  ],
+  "sections": [
+    {
+      "heading": "1. Introduction to OFDM and Multicarrier Modulation",
+      "content": "Orthogonal Frequency-Division Multiplexing (OFDM) is the foundation of modern wireless standards like 4G LTE, 5G NR, and Wi-Fi (802.11a/g/n/ac/ax). Instead of transmitting a single high-rate data stream, OFDM divides the wideband channel into many narrow, orthogonal subcarriers. Each subcarrier carries a low-rate data stream, making the symbol duration much longer than the channel delay spread. This effectively transforms a frequency-selective fading channel into multiple flat-fading channels, drastically simplifying equalization.\n\nThe core mathematical engine of OFDM is the Discrete Fourier Transform (DFT). The transmitter uses the Inverse Fast Fourier Transform (IFFT) to modulate data symbols onto orthogonal subcarriers, and the receiver uses the Fast Fourier Transform (FFT) to demodulate them. The orthogonality ensures that, despite overlapping spectra, subcarriers do not interfere with each other (assuming perfect synchronization).",
+      "code": null,
+      "codeTitle": null,
+      "matlabComparison": null
+    },
+    {
+      "heading": "2. Subcarrier Mapping and OFDM Symbol Construction",
+      "content": "In a practical OFDM system, not all subcarriers carry data. A typical layout (similar to IEEE 802.11a) uses a 64-point IFFT/FFT. The subcarriers are allocated as follows:\n- **Data subcarriers**: Carry the actual payload (e.g., QAM symbols).\n- **Pilot subcarriers**: Carry known symbols used for channel estimation and phase tracking.\n- **DC subcarrier**: The center subcarrier (index 0) is set to zero to avoid DC offset issues in the RF hardware.\n- **Guard subcarriers**: The edge subcarriers are set to zero to provide a guard band, reducing out-of-band emissions and relaxing filter requirements.\n\nIn Python, we use `numpy.fft.ifft` to generate the time-domain OFDM symbol. It is crucial to arrange the subcarriers correctly. The standard IFFT expects the DC subcarrier at index 0, positive frequencies at indices 1 to N/2-1, and negative frequencies at indices N/2 to N-1. We often use `numpy.fft.fftshift` and `numpy.fft.ifftshift` to map logical subcarrier indices (e.g., -32 to +31) to the physical indices expected by the IFFT.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# OFDM Parameters (802.11a-like)\nN_FFT = 64\nN_DATA = 48\nN_PILOTS = 4\n\n# Subcarrier indices (logical: -32 to +31)\nall_subcarriers = np.arange(-N_FFT//2, N_FFT//2)\n\n# Define subcarrier allocations\npilot_carriers = np.array([-21, -7, 7, 21])\ndc_carrier = np.array([0])\nguard_carriers = np.concatenate((np.arange(-32, -26), np.arange(27, 32)))\n\n# Data carriers are all others\nused_carriers = np.setdiff1d(all_subcarriers, guard_carriers)\nused_carriers = np.setdiff1d(used_carriers, dc_carrier)\ndata_carriers = np.setdiff1d(used_carriers, pilot_carriers)\n\nprint(f\"Number of data carriers: {len(data_carriers)}\")\n\n# Generate random QPSK data and pilots\ndata_symbols = (np.sign(np.random.randn(N_DATA)) + 1j * np.sign(np.random.randn(N_DATA))) / np.sqrt(2)\npilot_symbols = np.ones(N_PILOTS) * (1 + 1j) / np.sqrt(2)\n\n# Map to subcarriers\nX = np.zeros(N_FFT, dtype=complex)\nX[data_carriers + N_FFT//2] = data_symbols\nX[pilot_carriers + N_FFT//2] = pilot_symbols\n\n# IFFT shift to put DC at index 0, then IFFT\nX_ifft_input = np.fft.ifftshift(X)\nx_time = np.fft.ifft(X_ifft_input) * np.sqrt(N_FFT) # Scale for energy conservation\n\nplt.figure(figsize=(10, 4))\nplt.plot(np.abs(x_time))\nplt.title('Time-Domain OFDM Symbol Magnitude')\nplt.xlabel('Sample Index')\nplt.ylabel('Magnitude')\nplt.grid(True)\nplt.show()",
+      "codeTitle": "OFDM Subcarrier Mapping and IFFT",
+      "matlabComparison": "% MATLAB equivalent for subcarrier mapping\nN_FFT = 64;\nX = zeros(N_FFT, 1);\n% MATLAB is 1-indexed, so mapping requires care\n% ifftshift handles the rearrangement\nX_ifft_input = ifftshift(X);\nx_time = ifft(X_ifft_input) * sqrt(N_FFT);"
+    },
+    {
+      "heading": "3. The Cyclic Prefix (CP) and Multipath Channels",
+      "content": "When an OFDM signal passes through a multipath channel, the delayed copies of the signal cause Inter-Symbol Interference (ISI) between adjacent OFDM symbols. Furthermore, the linear convolution of the channel with the signal destroys the orthogonality of the subcarriers, causing Inter-Carrier Interference (ICI).\n\nTo solve this, OFDM prepends a Cyclic Prefix (CP) to each symbol. The CP is a copy of the last N_CP samples of the OFDM symbol. If the CP length is greater than or equal to the channel's maximum delay spread (L), two magical things happen:\n1. The ISI from the previous symbol only affects the CP, which is discarded at the receiver.\n2. The linear convolution of the channel with the transmitted signal appears as a **circular convolution** over the FFT window. \n\nBy the properties of the DFT, circular convolution in the time domain corresponds to element-wise multiplication in the frequency domain: Y[k] = H[k] * X[k] + W[k], where H[k] is the channel frequency response at subcarrier k. This enables simple one-tap equalization.",
+      "code": "# OFDM Parameters\nN_CP = 16 # Cyclic prefix length\n\n# Add CP\nx_with_cp = np.concatenate((x_time[-N_CP:], x_time))\n\n# Define a multipath channel (e.g., 3 taps)\nh = np.array([0.8, 0.4 + 0.2j, -0.2 + 0.1j])\n\n# Pass through channel (linear convolution)\ny_rx = np.convolve(x_with_cp, h)\n\n# Add AWGN\nSNR_dB = 20\nnoise_var = 10**(-SNR_dB/10) * np.var(y_rx)\nnoise = np.sqrt(noise_var/2) * (np.random.randn(len(y_rx)) + 1j * np.random.randn(len(y_rx)))\ny_rx_noisy = y_rx + noise\n\n# Receiver processing\n# 1. Remove CP (discard first N_CP samples)\ny_rx_no_cp = y_rx_noisy[N_CP:N_CP+N_FFT]\n\n# 2. FFT\nY = np.fft.fft(y_rx_no_cp) / np.sqrt(N_FFT)\nY_shifted = np.fft.fftshift(Y) # Shift back to logical indices\n\n# Extract received data and pilots\nY_data = Y_shifted[data_carriers + N_FFT//2]\nY_pilots = Y_shifted[pilot_carriers + N_FFT//2]",
+      "codeTitle": "Adding CP, Channel Convolution, and Receiver FFT",
+      "matlabComparison": null
+    },
+    {
+      "heading": "4. Channel Estimation and Equalization",
+      "content": "Because the channel acts as a single complex multiplier H[k] on each subcarrier, we can recover the transmitted symbols X[k] by dividing the received symbols Y[k] by an estimate of H[k]. This is called one-tap equalization.\n\nTo estimate H[k], we use the pilot subcarriers. Since the receiver knows the transmitted pilot symbols P[k], it can estimate the channel at the pilot locations using Least Squares (LS): H_est[k] = Y_pilot[k] / P[k]. \n\nTo find the channel response at the data subcarriers, we interpolate the estimates from the pilot subcarriers. Common interpolation methods include linear, spline, or low-pass interpolation. Once we have H_est for all data subcarriers, we can perform Zero-Forcing (ZF) equalization: X_est[k] = Y_data[k] / H_est[k]. Alternatively, Minimum Mean Square Error (MMSE) equalization can be used to avoid noise enhancement at subcarriers with deep fades.",
+      "code": "from scipy.interpolate import interp1d\n\n# 1. LS Channel Estimation at pilot locations\nH_pilots_est = Y_pilots / pilot_symbols\n\n# 2. Interpolate channel estimates for data subcarriers\n# We use 1D interpolation over the subcarrier indices\ninterpolator = interp1d(pilot_carriers, H_pilots_est, kind='linear', fill_value='extrapolate')\nH_data_est = interpolator(data_carriers)\n\n# 3. Zero-Forcing (ZF) Equalization\nX_data_est_zf = Y_data / H_data_est\n\n# 4. MMSE Equalization (requires noise variance estimate)\n# MMSE = Y * conj(H) / (|H|^2 + 1/SNR)\nsnr_linear = 10**(SNR_dB/10)\nX_data_est_mmse = Y_data * np.conj(H_data_est) / (np.abs(H_data_est)**2 + 1/snr_linear)\n\n# Plot constellation\nplt.figure(figsize=(6, 6))\nplt.scatter(X_data_est_zf.real, X_data_est_zf.imag, label='ZF Equalized', alpha=0.7)\nplt.scatter(data_symbols.real, data_symbols.imag, marker='x', color='red', label='Tx Symbols')\nplt.title('Equalized QPSK Constellation')\nplt.xlabel('In-Phase')\nplt.ylabel('Quadrature')\nplt.legend()\nplt.grid(True)\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "LS Channel Estimation and 1-Tap Equalization",
+      "matlabComparison": null
+    },
+    {
+      "heading": "5. PAPR and Carrier Frequency Offset (CFO)",
+      "content": "While OFDM is robust against multipath, it has two major drawbacks: high Peak-to-Average Power Ratio (PAPR) and sensitivity to Carrier Frequency Offset (CFO).\n\n**PAPR**: An OFDM time-domain signal is the sum of many independent subcarriers. By the Central Limit Theorem, the time-domain signal approximates a complex Gaussian process, which has high peaks. High PAPR requires highly linear, inefficient Power Amplifiers (PAs) to avoid clipping and out-of-band distortion. Techniques like clipping and filtering, or Selected Mapping (SLM), are used to mitigate this.\n\n**CFO**: If the transmitter and receiver local oscillators are not perfectly aligned, or if there is Doppler shift, a Carrier Frequency Offset occurs. In the time domain, CFO causes a progressive phase rotation. In the frequency domain, CFO destroys the orthogonality of the subcarriers, leading to severe Inter-Carrier Interference (ICI). CFO must be estimated (often using the CP or special preambles) and compensated before the FFT.",
+      "code": "# Calculate PAPR of the OFDM symbol\npower_time = np.abs(x_time)**2\npeak_power = np.max(power_time)\naverage_power = np.mean(power_time)\npapr_linear = peak_power / average_power\npapr_dB = 10 * np.log10(papr_linear)\nprint(f\"PAPR: {papr_dB:.2f} dB\")\n\n# Simulate CFO effect\ncfo_normalized = 0.15 # CFO normalized to subcarrier spacing\nn_indices = np.arange(len(x_with_cp))\ncfo_phase_rotation = np.exp(1j * 2 * np.pi * cfo_normalized * n_indices / N_FFT)\n\n# Apply CFO to transmitted signal\ny_rx_cfo = x_with_cp * cfo_phase_rotation\n\n# Receiver processing with CFO\ny_rx_cfo_no_cp = y_rx_cfo[N_CP:N_CP+N_FFT]\nY_cfo = np.fft.fftshift(np.fft.fft(y_rx_cfo_no_cp) / np.sqrt(N_FFT))\nY_data_cfo = Y_cfo[data_carriers + N_FFT//2]\n\n# Plot ICI effect\nplt.figure(figsize=(6, 6))\nplt.scatter(Y_data_cfo.real, Y_data_cfo.imag, alpha=0.7)\nplt.title(f'Constellation with {cfo_normalized} Normalized CFO (ICI)')\nplt.xlabel('In-Phase')\nplt.ylabel('Quadrature')\nplt.grid(True)\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "PAPR Calculation and CFO Simulation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "6. End-to-End OFDM Link Simulation",
+      "content": "To fully understand OFDM, we can build an end-to-end simulation over a multipath channel and measure the Bit Error Rate (BER). The simulation loop involves generating random bits, mapping them to QAM symbols, mapping symbols to subcarriers, IFFT, adding CP, passing through a multipath channel with AWGN, removing CP, FFT, channel estimation, equalization, and finally demodulating the symbols back to bits.\n\nComparing OFDM to a single-carrier system over the same multipath channel highlights OFDM's advantage. A single-carrier system would suffer from severe ISI and require a complex time-domain equalizer (like a Decision Feedback Equalizer or Viterbi equalizer). OFDM elegantly handles the multipath with a simple FFT and one-tap scalar multiplication per subcarrier.",
+      "code": "def simulate_ofdm_ber(EbN0_dB_range, num_symbols=1000):\n    # Simplified OFDM BER simulation for QPSK\n    N_FFT = 64; N_CP = 16; N_DATA = 48\n    data_carriers = np.concatenate((np.arange(-26, -21), np.arange(-20, -7), np.arange(-6, 0), \n                                    np.arange(1, 7), np.arange(8, 21), np.arange(22, 27)))\n    h = np.array([0.8, 0.4+0.2j, -0.2+0.1j]) # Multipath channel\n    H_exact = np.fft.fft(h, N_FFT) # Exact channel frequency response\n    H_data_exact = np.fft.fftshift(H_exact)[data_carriers + N_FFT//2]\n    \n    ber = []\n    for EbN0 in EbN0_dB_range:\n        snr_db = EbN0 + 10*np.log10(2) + 10*np.log10(N_DATA/N_FFT) # QPSK (2 bits/sym), rate loss\n        noise_var = 10**(-snr_db/10)\n        errors = 0; total_bits = 0\n        \n        for _ in range(num_symbols):\n            # Tx\n            bits = np.random.randint(0, 2, N_DATA * 2)\n            syms = (1 - 2*bits[0::2]) + 1j*(1 - 2*bits[1::2]) # QPSK\n            X = np.zeros(N_FFT, dtype=complex)\n            X[data_carriers + N_FFT//2] = syms\n            x_time = np.fft.ifft(np.fft.ifftshift(X)) * np.sqrt(N_FFT)\n            x_cp = np.concatenate((x_time[-N_CP:], x_time))\n            \n            # Channel\n            y = np.convolve(x_cp, h)\n            noise = np.sqrt(noise_var/2) * (np.random.randn(len(y)) + 1j*np.random.randn(len(y)))\n            y = y + noise\n            \n            # Rx\n            y_no_cp = y[N_CP:N_CP+N_FFT]\n            Y = np.fft.fftshift(np.fft.fft(y_no_cp) / np.sqrt(N_FFT))\n            Y_data = Y[data_carriers + N_FFT//2]\n            \n            # Ideal ZF Equalization (using exact channel for simplicity)\n            syms_est = Y_data / H_data_exact\n            \n            # Demodulate\n            bits_est = np.zeros(N_DATA * 2, dtype=int)\n            bits_est[0::2] = syms_est.real < 0\n            bits_est[1::2] = syms_est.imag < 0\n            \n            errors += np.sum(bits != bits_est)\n            total_bits += len(bits)\n            \n        ber.append(errors / total_bits)\n    return ber\n\n# EbN0_range = np.arange(0, 15, 2)\n# ber_ofdm = simulate_ofdm_ber(EbN0_range, num_symbols=100)\n# plt.semilogy(EbN0_range, ber_ofdm, 'bo-')\n# plt.grid(True); plt.xlabel('Eb/N0 (dB)'); plt.ylabel('BER')",
+      "codeTitle": "End-to-End OFDM BER Simulation",
+      "matlabComparison": null
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: OFDM Symbol Generation",
+      "prompt": "Write a function `generate_ofdm_symbol(data_symbols, N_FFT, N_CP)` that takes an array of N_FFT data symbols (assume all subcarriers are used for simplicity), performs the IFFT, and adds a cyclic prefix of length N_CP. Return the time-domain signal.",
+      "hint": "Remember to use `np.fft.ifftshift` before `np.fft.ifft` if your input data is ordered from negative to positive frequencies. Don't forget to scale the IFFT output by `np.sqrt(N_FFT)`.",
+      "solution": "import numpy as np\n\ndef generate_ofdm_symbol(data_symbols, N_FFT, N_CP):\n    # Ensure input length matches N_FFT\n    assert len(data_symbols) == N_FFT\n    \n    # Shift DC to index 0\n    X_shifted = np.fft.ifftshift(data_symbols)\n    \n    # Perform IFFT and scale\n    x_time = np.fft.ifft(X_shifted) * np.sqrt(N_FFT)\n    \n    # Add Cyclic Prefix\n    x_with_cp = np.concatenate((x_time[-N_CP:], x_time))\n    \n    return x_with_cp\n\n# Test the function\nN_FFT = 64\nN_CP = 16\ndata = np.random.randn(N_FFT) + 1j * np.random.randn(N_FFT)\ntx_signal = generate_ofdm_symbol(data, N_FFT, N_CP)\nprint(f\"Output length: {len(tx_signal)} (Expected: {N_FFT + N_CP})\")",
+      "explanation": "The function first rearranges the frequency-domain symbols using `ifftshift` so that the DC component is at index 0, which is what `np.fft.ifft` expects. After the IFFT, we scale by `sqrt(N_FFT)` to maintain energy equivalence between time and frequency domains. Finally, we slice the last `N_CP` samples of the time-domain signal and prepend them using `np.concatenate`."
+    },
+    {
+      "title": "Exercise 2: One-Tap Equalization",
+      "prompt": "Given received frequency-domain symbols `Y` and the exact channel frequency response `H` at the corresponding subcarriers, implement both Zero-Forcing (ZF) and Minimum Mean Square Error (MMSE) equalizers. The function should be `equalize(Y, H, SNR_dB, method='zf')`.",
+      "hint": "For ZF, simply divide `Y` by `H`. For MMSE, the equalization weight is `conj(H) / (|H|^2 + 1/SNR_linear)`. Convert SNR from dB to linear scale first.",
+      "solution": "import numpy as np\n\ndef equalize(Y, H, SNR_dB, method='zf'):\n    if method.lower() == 'zf':\n        # Zero-Forcing\n        X_est = Y / H\n    elif method.lower() == 'mmse':\n        # MMSE\n        snr_linear = 10**(SNR_dB / 10)\n        # Avoid division by zero if H is very small and SNR is high\n        weight = np.conj(H) / (np.abs(H)**2 + 1/snr_linear)\n        X_est = Y * weight\n    else:\n        raise ValueError(\"Method must be 'zf' or 'mmse'\")\n    return X_est\n\n# Test\nY_test = np.array([0.5+0.5j, -0.2+0.8j])\nH_test = np.array([0.8-0.1j, 0.1+0.9j])\nprint(\"ZF:\", equalize(Y_test, H_test, 20, 'zf'))\nprint(\"MMSE:\", equalize(Y_test, H_test, 20, 'mmse'))",
+      "explanation": "Zero-Forcing (ZF) simply inverts the channel, which works well at high SNR but can amplify noise when the channel magnitude `|H|` is small (a deep fade). MMSE takes the noise variance into account. The term `1/snr_linear` in the denominator prevents the equalizer from applying massive gain at deep fades, thus balancing channel inversion with noise enhancement."
+    },
+    {
+      "title": "Exercise 3: CFO Estimation using CP",
+      "prompt": "A common way to estimate Carrier Frequency Offset (CFO) is by exploiting the Cyclic Prefix. Since the CP is a copy of the end of the symbol, the phase difference between the CP and the corresponding samples at the end of the symbol is proportional to the CFO. Write a function `estimate_cfo_cp(rx_signal, N_FFT, N_CP)` that estimates the normalized CFO.",
+      "hint": "Extract the CP part `rx_signal[:N_CP]` and the corresponding data part `rx_signal[N_FFT:N_FFT+N_CP]`. Compute the correlation `sum(CP_part * conj(Data_part))`. The angle of this correlation gives the phase shift over N_FFT samples. The normalized CFO is `-angle / (2 * pi)`.",
+      "solution": "import numpy as np\n\ndef estimate_cfo_cp(rx_signal, N_FFT, N_CP):\n    # Extract the CP and the corresponding part at the end of the symbol\n    cp_part = rx_signal[:N_CP]\n    data_part = rx_signal[N_FFT:N_FFT+N_CP]\n    \n    # Compute correlation\n    # Note: data_part is delayed by N_FFT relative to cp_part\n    # If rx(t) = x(t) * exp(j*2*pi*f*t), then rx(t) * conj(rx(t+T)) \n    # gives a phase of -2*pi*f*T\n    correlation = np.sum(cp_part * np.conj(data_part))\n    \n    # The phase difference over N_FFT samples\n    phase_diff = np.angle(correlation)\n    \n    # Normalized CFO (relative to subcarrier spacing)\n    cfo_est = -phase_diff / (2 * np.pi)\n    \n    return cfo_est\n\n# Test\nN_FFT = 64; N_CP = 16\nx = np.random.randn(N_FFT) + 1j*np.random.randn(N_FFT)\nx_cp = np.concatenate((x[-N_CP:], x))\n\n# Apply CFO\ntrue_cfo = 0.12\nphase_rot = np.exp(1j * 2 * np.pi * true_cfo * np.arange(len(x_cp)) / N_FFT)\nrx = x_cp * phase_rot\n\nest_cfo = estimate_cfo_cp(rx, N_FFT, N_CP)\nprint(f\"True CFO: {true_cfo}, Estimated CFO: {est_cfo:.4f}\")",
+      "explanation": "The CP is identical to the tail of the OFDM symbol, separated by exactly `N_FFT` samples. In the presence of CFO, the signal experiences a continuous phase rotation. By multiplying the CP samples with the complex conjugate of the tail samples, the underlying data cancels out, leaving only the phase difference accumulated over `N_FFT` samples. The angle of this sum gives `-2 * pi * CFO_normalized`, allowing us to estimate the CFO."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is the primary purpose of the Cyclic Prefix (CP) in an OFDM system?",
+      "options": [
+        "To increase the data rate by transmitting extra symbols",
+        "To convert linear convolution of the channel into circular convolution, preventing ISI and ICI",
+        "To reduce the Peak-to-Average Power Ratio (PAPR) of the transmitted signal",
+        "To provide error correction coding for the data subcarriers"
+      ],
+      "correctIndex": 1,
+      "explanation": "The CP absorbs the delay spread of the multipath channel, preventing Inter-Symbol Interference (ISI). Crucially, it makes the linear convolution of the channel appear as circular convolution to the FFT, maintaining subcarrier orthogonality and preventing Inter-Carrier Interference (ICI)."
+    },
+    {
+      "question": "In a 64-point FFT OFDM system, if the sampling rate is 20 MHz, what is the subcarrier spacing?",
+      "options": [
+        "312.5 kHz",
+        "1.25 MHz",
+        "20 MHz",
+        "64 kHz"
+      ],
+      "correctIndex": 0,
+      "explanation": "The subcarrier spacing is the sampling rate divided by the FFT size: 20 MHz / 64 = 312.5 kHz."
+    },
+    {
+      "question": "Why is the DC subcarrier (index 0) typically left empty (set to zero) in practical OFDM systems?",
+      "options": [
+        "It carries the pilot symbols for channel estimation",
+        "It is used for the Cyclic Prefix",
+        "To avoid interference from DC offsets and local oscillator leakage in the RF hardware",
+        "Because the FFT algorithm cannot process the zero index"
+      ],
+      "correctIndex": 2,
+      "explanation": "Direct conversion RF transceivers often suffer from DC offsets and local oscillator (LO) leakage, which manifest as a strong spike at 0 Hz (the center of the baseband spectrum). Leaving the DC subcarrier empty prevents this hardware impairment from corrupting data."
+    },
+    {
+      "question": "Which of the following statements about PAPR in OFDM is true?",
+      "options": [
+        "OFDM has a very low PAPR, making it highly power efficient",
+        "High PAPR requires the use of highly linear power amplifiers to avoid signal clipping and out-of-band emissions",
+        "PAPR decreases as the number of subcarriers increases",
+        "The Cyclic Prefix is used to reduce the PAPR"
+      ],
+      "correctIndex": 1,
+      "explanation": "OFDM signals are the sum of many independent subcarriers, leading to high peaks when they add constructively. This high PAPR requires linear power amplifiers, which are less power-efficient, to avoid clipping the peaks and causing distortion."
+    },
+    {
+      "question": "If a multipath channel has a maximum delay spread of 1.5 microseconds and the sampling rate is 20 MHz, what is the minimum required Cyclic Prefix length (in samples) to avoid ISI?",
+      "options": [
+        "15 samples",
+        "20 samples",
+        "30 samples",
+        "64 samples"
+      ],
+      "correctIndex": 2,
+      "explanation": "The delay spread in samples is (1.5 * 10^-6 seconds) * (20 * 10^6 samples/second) = 30 samples. The CP must be at least as long as the maximum delay spread to fully absorb the ISI."
+    },
+    {
+      "question": "When implementing Zero-Forcing (ZF) equalization, what happens at subcarriers where the channel frequency response has a deep fade (magnitude close to zero)?",
+      "options": [
+        "The signal is perfectly recovered with no penalty",
+        "The equalizer applies a very small gain, suppressing the noise",
+        "The equalizer applies a very large gain, which significantly amplifies the noise",
+        "The subcarrier is automatically discarded by the receiver"
+      ],
+      "correctIndex": 2,
+      "explanation": "ZF equalization divides the received signal by the channel estimate (Y/H). If H is very small (a deep fade), 1/H is very large. This amplifies whatever noise is present on that subcarrier, leading to noise enhancement. MMSE equalization is often used to mitigate this."
+    }
+  ]
+}

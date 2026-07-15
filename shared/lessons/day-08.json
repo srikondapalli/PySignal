@@ -1,0 +1,149 @@
+{
+  "id": "day-08",
+  "day": 8,
+  "title": "Channel Modeling: AWGN, Fading & Multipath",
+  "subtitle": "Simulate realistic wireless channels from simple AWGN to frequency-selective fading",
+  "duration": "3-4 hours",
+  "objectives": [
+    "Generate complex AWGN with correct variance splitting between I and Q components",
+    "Set SNR, Es/N0, and Eb/N0 accurately based on measured signal power",
+    "Model large-scale path loss and log-normal shadowing",
+    "Simulate small-scale Rayleigh and Rician flat fading using sum-of-sinusoids (Jakes) models",
+    "Implement frequency-selective multipath channels using tapped delay lines and standard ITU/3GPP profiles"
+  ],
+  "sections": [
+    {
+      "heading": "1. Complex AWGN and Variance Splitting",
+      "content": "Additive White Gaussian Noise (AWGN) is the fundamental baseline for any communication system simulation. In baseband simulations, signals are complex-valued (I + jQ). A common pitfall is incorrectly scaling the noise variance. If the total noise power is $N_0$, the variance must be split equally between the real (In-phase) and imaginary (Quadrature) components, meaning each dimension gets a variance of $N_0/2$. \n\nWhen generating complex noise in Python, we draw independent Gaussian samples for the real and imaginary parts. The standard deviation for each part is $\\sqrt{N_0/2}$. This ensures the total noise power $E[|n|^2] = E[n_I^2] + E[n_Q^2] = N_0/2 + N_0/2 = N_0$. Always measure the actual signal power before adding noise to ensure the desired Signal-to-Noise Ratio (SNR) is achieved.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Parameters\nN = 10000\nsignal_power_dBm = 10\nsnr_dB = 15\n\n# Generate a random QPSK signal\nsymbols = np.random.choice([1+1j, 1-1j, -1+1j, -1-1j], N) / np.sqrt(2)\n\n# Measure actual signal power (linear)\nsig_power = np.mean(np.abs(symbols)**2)\n\n# Calculate required noise power\nsnr_linear = 10**(snr_dB / 10)\nnoise_power = sig_power / snr_linear\n\n# Generate complex AWGN (split variance N0/2 per dimension)\nnoise_std = np.sqrt(noise_power / 2)\nnoise = noise_std * (np.random.randn(N) + 1j * np.random.randn(N))\n\n# Add noise to signal\nreceived = symbols + noise\n\n# Verify SNR\nmeasured_noise_power = np.mean(np.abs(noise)**2)\nmeasured_snr_dB = 10 * np.log10(sig_power / measured_noise_power)\nprint(f\"Target SNR: {snr_dB} dB, Measured SNR: {measured_snr_dB:.2f} dB\")\n\n# Plot constellation\nplt.figure(figsize=(6,6))\nplt.scatter(received.real, received.imag, s=1, alpha=0.5)\nplt.title(f'QPSK with AWGN (SNR = {snr_dB} dB)')\nplt.xlabel('In-Phase')\nplt.ylabel('Quadrature')\nplt.grid(True)\nplt.axis('equal')\nplt.show()",
+      "codeTitle": "Complex AWGN Generation",
+      "matlabComparison": "%% MATLAB Equivalent\nsymbols = (randi([0 1], N, 1)*2-1 + 1j*(randi([0 1], N, 1)*2-1))/sqrt(2);\nsig_power = mean(abs(symbols).^2);\nnoise_power = sig_power / (10^(snr_dB/10));\nnoise = sqrt(noise_power/2) * (randn(N,1) + 1j*randn(N,1));\nreceived = symbols + noise;"
+    },
+    {
+      "heading": "2. SNR, Es/N0, and Eb/N0 Relationships",
+      "content": "In digital communications, performance is often evaluated against $E_b/N_0$ (Energy per bit to noise power spectral density ratio) or $E_s/N_0$ (Energy per symbol to noise PSD ratio), rather than simple SNR. \n\nThe relationships are:\n$E_s/N_0 = E_b/N_0 \\times \\log_2(M)$\n$SNR = E_s/N_0 \\times (R_s / B)$\nwhere $M$ is the modulation order (e.g., 4 for QPSK), $R_s$ is the symbol rate, and $B$ is the noise bandwidth. In discrete-time baseband simulations where the sampling rate equals the symbol rate (1 sample per symbol), the noise bandwidth equals the symbol rate, making $SNR = E_s/N_0$. If oversampling is used (samples per symbol $Sps > 1$), the noise bandwidth is the sampling rate, so $SNR = E_s/N_0 / Sps$. Correctly converting between these metrics is critical for matching theoretical Bit Error Rate (BER) curves.",
+      "code": "import numpy as np\nfrom scipy.special import erfc\nimport matplotlib.pyplot as plt\n\n# Parameters\nN_bits = 100000\nEbN0_dB_range = np.arange(0, 11, 1)\n\n# QPSK modulation (M=4, 2 bits per symbol)\nbits = np.random.randint(0, 2, N_bits)\nsymbols = (2*bits[0::2]-1 + 1j*(2*bits[1::2]-1)) / np.sqrt(2)\n\nber_sim = []\nfor EbN0_dB in EbN0_dB_range:\n    # Convert Eb/N0 to Es/N0 (linear)\n    EbN0 = 10**(EbN0_dB / 10)\n    EsN0 = EbN0 * 2 # 2 bits per symbol for QPSK\n    \n    # In 1 sample/symbol simulation, SNR = Es/N0\n    snr_linear = EsN0\n    \n    # Generate noise\n    sig_power = 1.0 # Normalized QPSK power\n    noise_power = sig_power / snr_linear\n    noise = np.sqrt(noise_power/2) * (np.random.randn(len(symbols)) + 1j*np.random.randn(len(symbols)))\n    \n    # Receive and demodulate\n    rx = symbols + noise\n    rx_bits = np.zeros(N_bits)\n    rx_bits[0::2] = (rx.real > 0).astype(int)\n    rx_bits[1::2] = (rx.imag > 0).astype(int)\n    \n    # Calculate BER\n    errors = np.sum(bits != rx_bits)\n    ber_sim.append(errors / N_bits)\n\n# Theoretical QPSK BER: 0.5 * erfc(sqrt(Eb/N0))\nber_theory = 0.5 * erfc(np.sqrt(10**(EbN0_dB_range/10)))\n\nplt.semilogy(EbN0_dB_range, ber_theory, 'b-', label='Theory')\nplt.semilogy(EbN0_dB_range, ber_sim, 'ro', label='Simulation')\nplt.xlabel('Eb/N0 (dB)')\nplt.ylabel('Bit Error Rate (BER)')\nplt.title('QPSK BER in AWGN')\nplt.grid(True, which='both')\nplt.legend()\nplt.show()",
+      "codeTitle": "BER Simulation vs Eb/N0",
+      "matlabComparison": null
+    },
+    {
+      "heading": "3. Large-Scale Fading: Path Loss and Shadowing",
+      "content": "Large-scale fading describes the average signal power attenuation over large distances. The simplest model is Free Space Path Loss (FSPL), where power falls off with the square of the distance. A more general model is the Log-Distance Path Loss model, which introduces a path loss exponent $\\gamma$ (typically 2 to 6 depending on the environment).\n\n$PL(d) = PL(d_0) + 10 \\gamma \\log_{10}(d / d_0)$\n\nTo account for obstacles (buildings, terrain), we add Log-Normal Shadowing. This is modeled as a zero-mean Gaussian random variable $X_\\sigma$ (in dB) with standard deviation $\\sigma$ (typically 4 to 12 dB). The total path loss in dB is $PL(d) + X_\\sigma$. In Python, this is easily simulated using `np.random.randn()` scaled by $\\sigma$.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Parameters\ndistances = np.linspace(10, 1000, 500) # distances in meters\nd0 = 10.0 # reference distance in meters\nPL_d0 = 20 * np.log10(4 * np.pi * d0 * 2.4e9 / 3e8) # FSPL at d0 for 2.4 GHz\ngamma = 3.5 # path loss exponent (urban area)\nsigma_shadowing = 8.0 # shadowing standard deviation in dB\n\n# Log-distance path loss (deterministic)\nPL_deterministic = PL_d0 + 10 * gamma * np.log10(distances / d0)\n\n# Add log-normal shadowing (random)\nshadowing = sigma_shadowing * np.random.randn(len(distances))\nPL_total = PL_deterministic + shadowing\n\n# Plotting\nplt.figure(figsize=(8, 5))\nplt.plot(distances, PL_deterministic, 'r-', linewidth=2, label='Deterministic Path Loss')\nplt.scatter(distances, PL_total, s=5, alpha=0.5, label='With Log-Normal Shadowing')\nplt.xlabel('Distance (m)')\nplt.ylabel('Path Loss (dB)')\nplt.title('Log-Distance Path Loss with Shadowing')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Path Loss and Shadowing Simulation",
+      "matlabComparison": null
+    },
+    {
+      "heading": "4. Small-Scale Flat Fading: Rayleigh and Rician Models",
+      "content": "Small-scale fading describes rapid fluctuations in signal amplitude over short distances or time durations due to multipath interference. When there is no line-of-sight (NLOS) path, the channel envelope follows a Rayleigh distribution. If a strong line-of-sight (LOS) path exists, it follows a Rician distribution, characterized by the K-factor (ratio of LOS power to scattered power).\n\nTo simulate time-varying flat fading, we use the Jakes model (sum-of-sinusoids), which generates a complex Gaussian process with a specific Doppler power spectrum (U-shape). The maximum Doppler shift $f_d = (v/c) f_c$ determines how fast the channel changes. The coherence time $T_c \\approx 0.423 / f_d$ is the duration over which the channel is considered constant.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef jakes_fading(fd, Ts, N_samples, N_oscillators=16):\n    \"\"\"Generate Rayleigh fading using sum-of-sinusoids (Jakes model)\"\"\"\n    t = np.arange(N_samples) * Ts\n    # Initial phases\n    alpha = (np.pi / N_oscillators) * (np.arange(1, N_oscillators + 1) - 0.5)\n    theta = np.random.uniform(0, 2*np.pi, N_oscillators)\n    \n    # Generate complex fading envelope\n    h = np.zeros(N_samples, dtype=complex)\n    for n in range(N_oscillators):\n        h += np.exp(1j * (2 * np.pi * fd * np.cos(alpha[n]) * t + theta[n]))\n    \n    # Normalize power to 1\n    h = h / np.sqrt(N_oscillators)\n    return h\n\n# Parameters\nfd = 100 # Maximum Doppler shift (Hz)\nTs = 1e-4 # Sampling time (s)\nN = 10000\n\n# Generate Rayleigh fading\nh_rayleigh = jakes_fading(fd, Ts, N)\n\n# Generate Rician fading (K-factor = 10 dB)\nK_dB = 10\nK_linear = 10**(K_dB/10)\n# LOS component (constant amplitude)\nlos = np.sqrt(K_linear / (K_linear + 1)) * np.exp(1j * np.pi/4)\n# Scattered component (Rayleigh)\nscattered = np.sqrt(1 / (K_linear + 1)) * h_rayleigh\nh_rician = los + scattered\n\n# Plot envelopes in dB\nt = np.arange(N) * Ts\nplt.figure(figsize=(10, 4))\nplt.plot(t, 20*np.log10(np.abs(h_rayleigh)), label='Rayleigh (NLOS)')\nplt.plot(t, 20*np.log10(np.abs(h_rician)), label=f'Rician (K={K_dB}dB)')\nplt.xlabel('Time (s)')\nplt.ylabel('Envelope (dB)')\nplt.title(f'Fading Envelopes (fd = {fd} Hz)')\nplt.legend()\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Jakes Fading Model",
+      "matlabComparison": null
+    },
+    {
+      "heading": "5. BER over Rayleigh Fading vs AWGN",
+      "content": "In a flat fading channel, the received signal is $y = hx + n$, where $h$ is the complex channel coefficient. The instantaneous SNR varies with $|h|^2$. This causes a severe degradation in Bit Error Rate (BER) compared to an AWGN channel. \n\nFor AWGN, BER drops exponentially with SNR. However, in Rayleigh fading, deep fades dominate the error probability, causing the BER to drop only linearly (inversely proportional to SNR). For example, to achieve a BER of $10^{-3}$ with BPSK, AWGN requires about 7 dB $E_b/N_0$, while Rayleigh fading requires about 24 dB! This massive penalty necessitates techniques like diversity, interleaving, and error correction coding in wireless systems.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.special import erfc\n\nEbN0_dB = np.arange(0, 35, 2)\nEbN0_lin = 10**(EbN0_dB/10)\nN_bits = 1000000\n\n# BPSK symbols\nbits = np.random.randint(0, 2, N_bits)\nsymbols = 2*bits - 1\n\nber_awgn = []\nber_rayleigh = []\n\nfor snr in EbN0_lin:\n    # Noise variance (N0/2 per dimension)\n    noise_std = np.sqrt(1 / (2 * snr))\n    noise = noise_std * (np.random.randn(N_bits) + 1j*np.random.randn(N_bits))\n    \n    # AWGN Channel\n    rx_awgn = symbols + noise\n    ber_awgn.append(np.sum(bits != (rx_awgn.real > 0)) / N_bits)\n    \n    # Rayleigh Fading Channel (independent fading per symbol for simplicity)\n    h = np.sqrt(0.5) * (np.random.randn(N_bits) + 1j*np.random.randn(N_bits))\n    rx_rayleigh = h * symbols + noise\n    \n    # Ideal coherent detection (equalization: multiply by h*)\n    rx_eq = rx_rayleigh * np.conj(h)\n    ber_rayleigh.append(np.sum(bits != (rx_eq.real > 0)) / N_bits)\n\n# Theoretical curves\nber_awgn_th = 0.5 * erfc(np.sqrt(EbN0_lin))\nber_rayleigh_th = 0.5 * (1 - np.sqrt(EbN0_lin / (1 + EbN0_lin)))\n\nplt.semilogy(EbN0_dB, ber_awgn_th, 'b-', label='AWGN Theory')\nplt.semilogy(EbN0_dB, ber_awgn, 'bo', label='AWGN Sim')\nplt.semilogy(EbN0_dB, ber_rayleigh_th, 'r-', label='Rayleigh Theory')\nplt.semilogy(EbN0_dB, ber_rayleigh, 'ro', label='Rayleigh Sim')\nplt.ylim(1e-5, 1)\nplt.xlabel('Eb/N0 (dB)')\nplt.ylabel('BER')\nplt.title('BPSK BER: AWGN vs Rayleigh Fading')\nplt.grid(True, which='both')\nplt.legend()\nplt.show()",
+      "codeTitle": "BER Comparison: AWGN vs Rayleigh",
+      "matlabComparison": null
+    },
+    {
+      "heading": "6. Frequency-Selective Multipath Channels",
+      "content": "When the signal bandwidth exceeds the channel's coherence bandwidth (or equivalently, the symbol duration is shorter than the delay spread), the channel becomes frequency-selective. Different frequency components experience different fading, causing Inter-Symbol Interference (ISI) in the time domain.\n\nWe model this using a Tapped Delay Line (TDL), which acts as an FIR filter. The channel impulse response is $h(t) = \\sum_{i=0}^{L-1} h_i \\delta(t - \\tau_i)$, where $h_i$ are the complex fading coefficients of each tap and $\\tau_i$ are their delays. Standardized Power Delay Profiles (PDPs) like ITU Pedestrian A (EPA), Vehicular A (EVA), or Extended Typical Urban (ETU) define the average power and delay of each tap. In Python, we emulate the channel by convolving the transmitted signal with the sampled impulse response using `scipy.signal.lfilter` or `np.convolve`.",
+      "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.signal import lfilter\n\n# ITU Extended Pedestrian A (EPA) model parameters\ndelays_ns = np.array([0, 30, 70, 90, 110, 190, 410])\npowers_dB = np.array([0.0, -1.0, -2.0, -3.0, -8.0, -17.2, -20.8])\n\n# Convert to linear power and normalize\npowers_lin = 10**(powers_dB / 10)\npowers_lin /= np.sum(powers_lin)\n\n# System parameters\nfs = 15.36e6 # LTE 10MHz sampling rate\nTs = 1/fs\n\n# Map delays to discrete sample indices (nearest neighbor)\ntap_indices = np.round(delays_ns * 1e-9 / Ts).astype(int)\nL = np.max(tap_indices) + 1\n\n# Create FIR channel impulse response (static snapshot)\nh_fir = np.zeros(L, dtype=complex)\nfor idx, pwr in zip(tap_indices, powers_lin):\n    # Generate independent Rayleigh fading for each tap\n    h_fir[idx] = np.sqrt(pwr/2) * (np.random.randn() + 1j*np.random.randn())\n\n# Generate a test signal (e.g., Zadoff-Chu sequence or random QPSK)\nx = (np.random.randn(1000) + 1j*np.random.randn(1000)) / np.sqrt(2)\n\n# Pass signal through the multipath channel\n# lfilter is efficient for streaming data; np.convolve is fine for blocks\ny = lfilter(h_fir, [1.0], x)\n\n# Plot Channel Frequency Response\nH = np.fft.fft(h_fir, 1024)\nf = np.fft.fftfreq(1024, Ts)\nplt.figure(figsize=(8, 4))\nplt.plot(np.fft.fftshift(f)/1e6, 20*np.log10(np.abs(np.fft.fftshift(H))))\nplt.xlabel('Frequency (MHz)')\nplt.ylabel('Magnitude (dB)')\nplt.title('Frequency-Selective Channel Response (EPA)')\nplt.grid(True)\nplt.show()",
+      "codeTitle": "Tapped Delay Line Channel Emulation",
+      "matlabComparison": "%% MATLAB Equivalent\nh_fir = zeros(1, L);\nfor i = 1:length(tap_indices)\n    idx = tap_indices(i) + 1; % 1-based indexing\n    h_fir(idx) = sqrt(powers_lin(i)/2) * (randn + 1j*randn);\nend\ny = filter(h_fir, 1, x);"
+    }
+  ],
+  "exercises": [
+    {
+      "title": "Exercise 1: Exponential Power Delay Profile",
+      "prompt": "Create a function `generate_exp_pdp(tau_rms, Ts, num_taps)` that generates a static multipath channel impulse response following an exponential Power Delay Profile. The average power of tap $k$ should be proportional to $\\exp(-k T_s / \\tau_{rms})$. Normalize the total power of the taps to 1. Return the complex impulse response array.",
+      "hint": "Calculate the variance for each tap using the exponential formula, normalize the array of variances so they sum to 1, then generate complex Gaussian random variables with those variances.",
+      "solution": "import numpy as np\n\ndef generate_exp_pdp(tau_rms, Ts, num_taps):\n    # Calculate average power (variance) for each tap\n    k = np.arange(num_taps)\n    delays = k * Ts\n    powers = np.exp(-delays / tau_rms)\n    \n    # Normalize total power to 1\n    powers = powers / np.sum(powers)\n    \n    # Generate complex Rayleigh fading taps\n    # Variance is split N0/2 for real and imaginary parts\n    h = np.sqrt(powers/2) * (np.random.randn(num_taps) + 1j*np.random.randn(num_taps))\n    \n    return h\n\n# Test the function\nh = generate_exp_pdp(tau_rms=1e-6, Ts=1e-7, num_taps=20)\nprint(f\"Total power: {np.sum(np.abs(h)**2):.4f}\")",
+      "explanation": "An exponential PDP is a common theoretical model for indoor and urban channels. We first create an array of delays based on the sampling time `Ts`. The power of each tap decays exponentially according to `exp(-delay / tau_rms)`. Crucially, we normalize the power array so its sum is 1, ensuring the channel doesn't amplify or attenuate the signal on average. Finally, we generate complex Gaussian variables, remembering to divide the power by 2 for the real and imaginary components."
+    },
+    {
+      "title": "Exercise 2: Time-Varying Tapped Delay Line",
+      "prompt": "Extend the EPA channel model from Section 6 to be time-varying. Use the `jakes_fading` function from Section 4 to generate independent fading for each tap over time. The output should be a 2D array `H_tv` of shape `(N_samples, L)`, where each row is the channel impulse response at a specific time instant.",
+      "hint": "Loop over the non-zero taps. For each tap, generate a Jakes fading sequence of length `N_samples`, scale it by `sqrt(powers_lin[i])`, and assign it to the corresponding column in `H_tv`.",
+      "solution": "import numpy as np\n\ndef jakes_fading(fd, Ts, N_samples, N_oscillators=16):\n    t = np.arange(N_samples) * Ts\n    alpha = (np.pi / N_oscillators) * (np.arange(1, N_oscillators + 1) - 0.5)\n    theta = np.random.uniform(0, 2*np.pi, N_oscillators)\n    h = np.zeros(N_samples, dtype=complex)\n    for n in range(N_oscillators):\n        h += np.exp(1j * (2 * np.pi * fd * np.cos(alpha[n]) * t + theta[n]))\n    return h / np.sqrt(N_oscillators)\n\n# EPA Parameters\ndelays_ns = np.array([0, 30, 70, 90, 110, 190, 410])\npowers_dB = np.array([0.0, -1.0, -2.0, -3.0, -8.0, -17.2, -20.8])\npowers_lin = 10**(powers_dB / 10)\npowers_lin /= np.sum(powers_lin)\n\nfs = 15.36e6\nTs = 1/fs\ntap_indices = np.round(delays_ns * 1e-9 / Ts).astype(int)\nL = np.max(tap_indices) + 1\n\nN_samples = 1000\nfd = 70 # Hz\n\n# Initialize time-varying channel matrix\nH_tv = np.zeros((N_samples, L), dtype=complex)\n\n# Generate independent fading for each tap\nfor i, idx in enumerate(tap_indices):\n    # Generate Jakes fading sequence (variance = 1)\n    fading_seq = jakes_fading(fd, Ts, N_samples)\n    # Scale by tap power and assign to the correct delay index\n    H_tv[:, idx] = np.sqrt(powers_lin[i]) * fading_seq\n\nprint(f\"H_tv shape: {H_tv.shape}\")\nprint(f\"Average power of first tap: {np.mean(np.abs(H_tv[:, tap_indices[0]])**2):.4f}\")",
+      "explanation": "A realistic channel simulator needs to model both frequency selectivity (multiple taps) and time variation (Doppler fading). By generating an independent Jakes fading process for each tap and scaling it by the tap's average power defined by the PDP, we create a 2D matrix representing the time-varying impulse response. To filter a signal with this matrix, you would typically use a time-varying convolution loop or overlap-add techniques, as `scipy.signal.lfilter` only supports static FIR coefficients."
+    },
+    {
+      "title": "Exercise 3: Coherence Bandwidth Calculation",
+      "prompt": "Write a function `coherence_bandwidth(delays, powers_lin)` that calculates the RMS delay spread $\\tau_{rms}$ of a given Power Delay Profile, and then estimates the 50% coherence bandwidth $B_c \\approx 1 / (5 \\tau_{rms})$.",
+      "hint": "The mean delay is $\\bar{\\tau} = \\frac{\\sum P_i \\tau_i}{\\sum P_i}$. The RMS delay spread is $\\tau_{rms} = \\sqrt{\\frac{\\sum P_i \\tau_i^2}{\\sum P_i} - \\bar{\\tau}^2}$.",
+      "solution": "import numpy as np\n\ndef coherence_bandwidth(delays, powers_lin):\n    # Ensure powers sum to 1 for simpler formulas\n    P_total = np.sum(powers_lin)\n    P_norm = powers_lin / P_total\n    \n    # Calculate mean delay\n    mean_delay = np.sum(P_norm * delays)\n    \n    # Calculate RMS delay spread\n    mean_sq_delay = np.sum(P_norm * (delays**2))\n    tau_rms = np.sqrt(mean_sq_delay - mean_delay**2)\n    \n    # Estimate 50% coherence bandwidth\n    Bc = 1.0 / (5.0 * tau_rms)\n    \n    return tau_rms, Bc\n\n# Test with EPA model\ndelays_ns = np.array([0, 30, 70, 90, 110, 190, 410]) * 1e-9\npowers_dB = np.array([0.0, -1.0, -2.0, -3.0, -8.0, -17.2, -20.8])\npowers_lin = 10**(powers_dB / 10)\n\ntau_rms, Bc = coherence_bandwidth(delays_ns, powers_lin)\nprint(f\"RMS Delay Spread: {tau_rms*1e9:.1f} ns\")\nprint(f\"Coherence Bandwidth: {Bc/1e6:.2f} MHz\")",
+      "explanation": "The RMS delay spread is the second central moment of the power delay profile and is the most important single metric for characterizing multipath severity. The coherence bandwidth is inversely proportional to the RMS delay spread. If a signal's bandwidth is much larger than $B_c$, it will experience severe frequency-selective fading. The factor of 1/5 is a common rule of thumb for a 50% correlation threshold in the frequency domain."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "When generating complex AWGN with a total noise power of $N_0$, what should be the variance of the real (In-phase) component?",
+      "options": [
+        "$N_0$",
+        "$N_0 / 2$",
+        "$\\sqrt{N_0}$",
+        "$N_0 / \\sqrt{2}$"
+      ],
+      "correctIndex": 1,
+      "explanation": "The total noise power is the sum of the variances of the real and imaginary components. To achieve a total power of $N_0$, the variance must be split equally, so the real part gets $N_0/2$ and the imaginary part gets $N_0/2$."
+    },
+    {
+      "question": "If you are simulating a QPSK system (2 bits per symbol) at 1 sample per symbol, and you want an $E_b/N_0$ of 10 dB, what is the required linear SNR?",
+      "options": [
+        "10",
+        "20",
+        "5",
+        "100"
+      ],
+      "correctIndex": 1,
+      "explanation": "First, convert $E_b/N_0$ from dB to linear: $10^{10/10} = 10$. For QPSK, $E_s/N_0 = 2 \\times E_b/N_0 = 20$. Since the simulation is 1 sample per symbol, the noise bandwidth equals the symbol rate, so $SNR = E_s/N_0 = 20$."
+    },
+    {
+      "question": "Which fading distribution is appropriate for modeling a channel with a strong Line-of-Sight (LOS) component?",
+      "options": [
+        "Rayleigh",
+        "Log-normal",
+        "Rician",
+        "Exponential"
+      ],
+      "correctIndex": 2,
+      "explanation": "The Rician distribution models a channel with a dominant LOS path plus scattered multipath components. Rayleigh is used when there is no LOS path."
+    },
+    {
+      "question": "In the Jakes fading model, what determines the maximum rate of change of the channel?",
+      "options": [
+        "The number of oscillators",
+        "The sampling rate",
+        "The maximum Doppler shift $f_d$",
+        "The K-factor"
+      ],
+      "correctIndex": 2,
+      "explanation": "The maximum Doppler shift $f_d$, which depends on the user's velocity and the carrier frequency, determines how rapidly the channel fades. The coherence time is inversely proportional to $f_d$."
+    },
+    {
+      "question": "Why does the Bit Error Rate (BER) curve drop much slower in a Rayleigh fading channel compared to an AWGN channel?",
+      "options": [
+        "Because the noise power is higher in Rayleigh fading.",
+        "Because deep fades cause the instantaneous SNR to drop significantly, dominating the average error probability.",
+        "Because the signal bandwidth increases in a fading channel.",
+        "Because the receiver cannot estimate the channel phase."
+      ],
+      "correctIndex": 1,
+      "explanation": "In Rayleigh fading, the signal amplitude occasionally drops to near zero (deep fades). During these fades, the instantaneous SNR is very low, and errors are highly probable. These events dominate the average BER, changing the curve from exponential (AWGN) to linear."
+    },
+    {
+      "question": "Which `scipy.signal` function is most appropriate for applying a static Tapped Delay Line (FIR) channel model to a long, streaming signal?",
+      "options": [
+        "`scipy.signal.fftconvolve`",
+        "`scipy.signal.lfilter`",
+        "`scipy.signal.welch`",
+        "`scipy.signal.resample`"
+      ],
+      "correctIndex": 1,
+      "explanation": "`lfilter` implements a standard difference equation (IIR/FIR filter) and supports maintaining state (using `zi` and `zf` arguments), making it ideal for processing streaming data block-by-block. `fftconvolve` is faster for very large arrays but processes the entire signal at once."
+    }
+  ]
+}

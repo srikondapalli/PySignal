@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,4 +25,72 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * Tracks per-user progress on each lesson (day 1-14).
+ * status: not_started (implicit by absence), in_progress, completed
+ */
+export const lessonProgress = mysqlTable(
+  "lesson_progress",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    lessonId: varchar("lessonId", { length: 32 }).notNull(),
+    status: mysqlEnum("status", ["in_progress", "completed"]).notNull().default("in_progress"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    completedAt: timestamp("completedAt"),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (t) => [uniqueIndex("user_lesson_idx").on(t.userId, t.lessonId)],
+);
+
+export type LessonProgress = typeof lessonProgress.$inferSelect;
+
+/**
+ * Every quiz attempt is recorded (supports retakes & history).
+ */
+export const quizAttempts = mysqlTable("quiz_attempts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  lessonId: varchar("lessonId", { length: 32 }).notNull(),
+  score: int("score").notNull(),
+  total: int("total").notNull(),
+  answers: text("answers"), // JSON array of selected option indices
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type QuizAttempt = typeof quizAttempts.$inferSelect;
+
+/**
+ * Notes: per-lesson notes (lessonId set) and general notebook (lessonId = "general").
+ */
+export const notes = mysqlTable(
+  "notes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    lessonId: varchar("lessonId", { length: 32 }).notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (t) => [uniqueIndex("user_note_idx").on(t.userId, t.lessonId)],
+);
+
+export type Note = typeof notes.$inferSelect;
+
+/**
+ * Activity log used for daily streak calculation.
+ * One row per user per day (date stored as YYYY-MM-DD string in user-agnostic UTC).
+ */
+export const activityLog = mysqlTable(
+  "activity_log",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    activityDate: varchar("activityDate", { length: 10 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("user_day_idx").on(t.userId, t.activityDate)],
+);
+
+export type ActivityLog = typeof activityLog.$inferSelect;
