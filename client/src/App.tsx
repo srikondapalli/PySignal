@@ -1,10 +1,11 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Router as WouterRouter, Switch } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { STATIC_MODE, useCourseAuth as useAuth } from "@/lib/api";
 import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Radio } from "lucide-react";
@@ -75,6 +76,22 @@ function Router() {
   );
 }
 
+/**
+ * In the static GitHub Pages build there is no server-side SPA fallback, so
+ * we route with the URL hash (e.g. /#/lesson/day-01) — deep links always
+ * resolve to index.html. The full-stack build keeps clean paths.
+ */
+function AppRouter() {
+  if (STATIC_MODE) {
+    return (
+      <WouterRouter hook={useHashLocation}>
+        <Router />
+      </WouterRouter>
+    );
+  }
+  return <Router />;
+}
+
 // NOTE: About Theme
 // - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
 //   to keep consistent foreground/background color across components
@@ -89,7 +106,7 @@ function App() {
       >
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <AppRouter />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

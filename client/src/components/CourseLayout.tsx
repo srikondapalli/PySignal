@@ -16,8 +16,8 @@ import {
   Radio,
   X,
 } from "lucide-react";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { useCourseAuth as useAuth } from "@/lib/api";
+import { api as trpc, useApiUtils } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";

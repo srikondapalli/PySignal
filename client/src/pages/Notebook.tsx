@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { ArrowUpRight, NotebookPen } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { api as trpc, useApiUtils } from "@/lib/api";
 import { CourseLayout } from "@/components/CourseLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,7 +13,7 @@ import { MarkdownText } from "@/components/MarkdownText";
  * per-lesson notes the user has written.
  */
 export default function Notebook() {
-  const utils = trpc.useUtils();
+  const utils = useApiUtils();
   const { data: metas } = trpc.curriculum.list.useQuery(undefined, { staleTime: Infinity });
   const { data: allNotes, isLoading } = trpc.notes.list.useQuery();
   const { data: general, isLoading: generalLoading } = trpc.notes.get.useQuery({

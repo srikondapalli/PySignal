@@ -46,3 +46,13 @@
 - [x] Run pnpm test (vitest) passing (17 tests, 3 files)
 - [x] Screenshot verification of all key pages (desktop + mobile)
 - [x] Checkpoint saved
+
+## GitHub Pages static demo + README (new request)
+- [x] Static demo mode: env-flag build that skips auth and uses localStorage for progress/quiz/notes
+- [x] Static data layer: curriculum JSON bundled into the client build (no tRPC server needed)
+- [x] Vite static build config with correct base path for GitHub Pages (/PySignal/)
+- [x] SPA routing fallback for Pages (hash routing via wouter useHashLocation)
+- [x] GitHub Actions workflow to build and deploy to Pages on push
+- [x] Comprehensive README.md (project overview, curriculum table, architecture, local dev, Pages hosting)
+- [ ] Push all changes to github.com/srikondapalli/PySignal
+- [ ] Verify Pages build succeeds and site works

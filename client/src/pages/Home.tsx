@@ -11,10 +11,10 @@ import {
   Radio,
   Waves,
 } from "lucide-react";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useCourseAuth as useAuth } from "@/lib/api";
 import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
-import { trpc } from "@/lib/trpc";
+import { api as trpc, useApiUtils } from "@/lib/api";
 import { WEEKS } from "@shared/lessonTypes";
 
 /**

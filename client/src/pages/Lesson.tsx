@@ -15,7 +15,7 @@ import {
   Target,
 } from "lucide-react";
 import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
+import { api as trpc, useApiUtils } from "@/lib/api";
 import { CourseLayout } from "@/components/CourseLayout";
 import { CodeBlock } from "@/components/CodeBlock";
 import { MarkdownText } from "@/components/MarkdownText";
@@ -35,7 +35,7 @@ import { localDateStr } from "@/lib/courseUtils";
 // Notes panel (per-lesson, autosaves on blur / debounce)
 // ---------------------------------------------------------------------------
 function NotesPanel({ lessonId }: { lessonId: string }) {
-  const utils = trpc.useUtils();
+  const utils = useApiUtils();
   const { data: note, isLoading } = trpc.notes.get.useQuery({ lessonId });
   const [text, setText] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -107,7 +107,7 @@ function QuizEngine({
   lessonId: string;
   questions: { question: string; options: string[] }[];
 }) {
-  const utils = trpc.useUtils();
+  const utils = useApiUtils();
   const [answers, setAnswers] = useState<number[]>(() => questions.map(() => -1));
   const [result, setResult] = useState<QuizResult | null>(null);
   const { data: history } = trpc.quiz.history.useQuery({ lessonId });
@@ -326,7 +326,7 @@ export default function Lesson() {
   const params = useParams<{ id: string }>();
   const lessonId = params.id;
   const [, navigate] = useLocation();
-  const utils = trpc.useUtils();
+  const utils = useApiUtils();
 
   const { data: lesson, isLoading, error } = trpc.curriculum.lesson.useQuery(
     { id: lessonId },

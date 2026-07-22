@@ -10,8 +10,8 @@ import {
   GraduationCap,
   Play,
 } from "lucide-react";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { useCourseAuth as useAuth } from "@/lib/api";
+import { api as trpc, useApiUtils } from "@/lib/api";
 import { CourseLayout } from "@/components/CourseLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
