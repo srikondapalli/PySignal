@@ -54,5 +54,5 @@
 - [x] SPA routing fallback for Pages (hash routing via wouter useHashLocation)
 - [x] GitHub Actions workflow to build and deploy to Pages on push
 - [x] Comprehensive README.md (project overview, curriculum table, architecture, local dev, Pages hosting)
-- [ ] Push all changes to github.com/srikondapalli/PySignal
-- [ ] Verify Pages build succeeds and site works
+- [x] Push all changes to github.com/srikondapalli/PySignal
+- [x] Verify Pages build succeeds and site works (live at https://srikondapalli.github.io/PySignal/)
